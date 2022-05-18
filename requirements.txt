@@ -1,0 +1,7 @@
+numpy
+torch
+torchvision
+opacus==1.1.1
+tqdm
+black
+pylint
