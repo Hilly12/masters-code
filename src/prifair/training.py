@@ -1,6 +1,6 @@
 """Source code for training models. """
 
-from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Type
+from typing import Callable, Mapping, Optional, Sequence, Tuple, Type
 
 import numpy as np
 import torch
@@ -10,7 +10,7 @@ from opacus.validators import ModuleValidator
 from tqdm import tqdm
 
 from .algorithms import latent_reweigh, reweigh, setup_weighted_dpsgd
-from .utils import WeightedDataLoader
+from .data import WeightedDataLoader
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -124,9 +124,9 @@ def train_dpsgd(
         loss_fn (torch.nn.Module):
             The loss function.
         target_epsilon (float):
-            Target epsilon for DP-SGD.
+            The target epsilon for DP-SGD.
         target_delta (float):
-            Target delta for DP-SGD.
+            The target delta for DP-SGD.
         max_grad_norm (float):
             Gradient clipping bound for DP-SGD.
         epochs (float):
@@ -221,13 +221,14 @@ def train_dpsgd_weighted(
     target_epsilon: float,
     target_delta: float,
     max_grad_norm: float,
-    weighting: str,
     epochs: int,
     max_physical_batch_size: int = 128,
+    weighting: str = "latent",
     vae: Optional[torch.nn.Module] = None,
-    alpha: Optional[float] = None,
-    k: Optional[float] = None,
     weights: Optional[np.ndarray] = None,
+    labels: Optional[np.ndarray] = None,
+    alpha: float = 0.01,
+    k: int = 16,
     **kwargs,
 ) -> Tuple[torch.nn.Module, Mapping[str, Sequence[float]]]:
     """Train a model with DP-SGD-W in the given environment.
@@ -244,23 +245,38 @@ def train_dpsgd_weighted(
         loss_fn (torch.nn.Module):
             The loss function.
         target_epsilon (float):
-            Target epsilon for DP-SGD-W.
+            The target epsilon for DP-SGD-W.
         target_delta (float):
-            Target delta for DP-SGD-W.
+            The target delta for DP-SGD-W.
         max_grad_norm (float):
             Gradient clipping bound for DP-SGD-W.
         weighting (str):
             The scheme to use for weighting the data.
+            Can be one of ["custom", "latent", "sensitive_attr"].
+            If set to "custom", then the weights must be provided in the `weights`
+            argument. If set to "latent", then the weights are computed using the VAE,
+            which must be provided in the `vae` argument. If set to "sensitive_attr",
+            then the weights are computed in order to rebalance the distribution of
+            the labels, which must be provided in the `labels` argument.
+            Defaults to "latent".
         epochs (int):
             The number of epochs to train for.
         max_physical_batch_size (int, optional):
             Maximum physical batch size for memory manager. Defaults to 128.
+        vae (Optional[torch.nn.Module]):
+            The VAE to use for weighting if weighting is set to "latent".
+            Defaults to None.
         weights (np.ndarray, optional):
             The weights to use for the reweighing if weighting is set to "custom".
-        alpha (float, optional):
-            The weight smoothing parameter for latent reweighing if weighting is set to "latent".
-        k (float, optional):
-            The number of latent bins for latent reweighing if weighing is set to "latent".
+            Defaults to None.
+        labels (np.ndarray, optional):
+            The labels to use for the reweighing if weighting is set to "sensitive_attr".
+        alpha (float):
+            The weight smoothing parameter for latent reweighing if weighting is
+            set to "latent". Defaults to 0.01.
+        k (int):
+            The number of latent bins for latent reweighing if weighing is set
+            to "latent". Defaults to 16.
         **kwargs:
             Passed to optim_class constructor.
 
@@ -272,24 +288,17 @@ def train_dpsgd_weighted(
     print("Reweighing...")
 
     if weighting == "latent":
-        kws = {}
-        if alpha is not None:
-            kws["alpha"] = alpha
-        if k is not None:
-            kws["k"] = k
         if vae is None:
             raise ValueError("vae cannot be None if weighting is set to 'latent'")
 
-        weights = latent_reweigh(train_loader, vae, **kws)
+        weights = latent_reweigh(train_loader, vae, alpha=alpha, k=k)
 
     elif weighting == "sensitive_attr":
         labels = kwargs.pop("labels")
         weights = reweigh(labels)
 
     elif weighting != "custom":
-        raise ValueError(
-            "weighting must be one of ['latent', 'sensitive_attr', 'custom']"
-        )
+        raise ValueError("weighting must be one of ['latent', 'sensitive_attr', 'custom']")
 
     model = model_class()
     model = ModuleValidator.fix(model)
@@ -390,9 +399,9 @@ def train_pate(
         n_teachers (int):
             The number of teachers to use in the ensemble.
         target_epsilon (float):
-            Target epsilon for DP-SGD-W.
+            The target epsilon for DP-SGD-W.
         target_delta (float):
-            Target delta for DP-SGD-W.
+            The target delta for DP-SGD-W.
         epochs (int):
             The number of epochs to train for.
         **kwargs:
@@ -534,7 +543,7 @@ def train_vae(
     val_loader: Optional[torch.data.utils.DataLoader],
     model_class: Type[torch.nn.Module],
     optim_class: Type[torch.optim.Optimizer],
-    loss_fn: Callable[Any, torch.Tensor],
+    loss_fn: Callable[..., torch.Tensor],
     latent_dim: int,
     beta: float,
     epochs: int,

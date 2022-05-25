@@ -1,6 +1,6 @@
 """Algorithms to supplement the training code. """
 
-from typing import Sequence
+from typing import Sequence, Union
 
 import numpy as np
 import torch
@@ -10,7 +10,8 @@ from opacus.accountants.utils import get_noise_multiplier
 from opacus.optimizers import DPOptimizer
 from opacus.privacy_engine import forbid_accumulation_hook
 
-from .utils import NonUniformPoissonSampler, _data_loader_with_sampler
+from .data import NonUniformPoissonSampler
+from .utils import _data_loader_with_sampler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -106,7 +107,7 @@ def setup_weighted_dpsgd(
     data_loader: torch.utils.data.DataLoader,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
-    weights: Sequence[float],
+    weights: Union[Sequence[float], np.ndarray],
     target_epsilon: float,
     target_delta: float,
     max_grad_norm: float,
@@ -121,7 +122,7 @@ def setup_weighted_dpsgd(
             The model to be used during training.
         optimizer (torch.optim.Optimizer):
             The optimizer to be used during training.
-        weights (Sequence[float]):
+        weights (Union[Sequence[float], np.ndarray]):
             The weights for each sample in the dataset.
         target_epsilon (float):
             The target epsilon for DP-SGD-W.
@@ -130,6 +131,8 @@ def setup_weighted_dpsgd(
         max_grad_norm (float):
             The gradient clipping bound for DP-SGD-W.
     """
+
+    weights = np.array(weights)
 
     model = GradSampleModule(model)
     model.register_forward_pre_hook(forbid_accumulation_hook)
@@ -159,8 +162,6 @@ def setup_weighted_dpsgd(
         expected_batch_size=expected_batch_size,
     )
 
-    optimizer.attach_step_hook(
-        accountant.get_optimizer_hook_fn(sample_rate=sample_rate)
-    )
+    optimizer.attach_step_hook(accountant.get_optimizer_hook_fn(sample_rate=sample_rate))
 
     return dp_loader, model, optimizer, accountant
