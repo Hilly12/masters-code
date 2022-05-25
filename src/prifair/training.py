@@ -9,7 +9,7 @@ from opacus.utils.batch_memory_manager import BatchMemoryManager
 from opacus.validators import ModuleValidator
 from tqdm import tqdm
 
-from .algorithms import latent_reweigh, reweigh, setup_weighted_dpsgd
+from .core import latent_reweigh, reweigh, setup_weighted_dpsgd
 from .data import WeightedDataLoader
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
