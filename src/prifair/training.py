@@ -541,8 +541,8 @@ def train_pate(
 
 
 def train_vae(
-    train_loader: torch.data.utils.DataLoader,
-    val_loader: Optional[torch.data.utils.DataLoader],
+    train_loader: torch.utils.data.DataLoader,
+    val_loader: Optional[torch.utils.data.DataLoader],
     model_class: Type[torch.nn.Module],
     optim_class: Type[torch.optim.Optimizer],
     loss_fn: Callable[..., torch.Tensor],
