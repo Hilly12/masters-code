@@ -162,6 +162,8 @@ def setup_weighted_dpsgd(
         expected_batch_size=expected_batch_size,
     )
 
-    optimizer.attach_step_hook(accountant.get_optimizer_hook_fn(sample_rate=sample_rate))
+    optimizer.attach_step_hook(
+        accountant.get_optimizer_hook_fn(sample_rate=sample_rate)
+    )
 
     return dp_loader, model, optimizer, accountant

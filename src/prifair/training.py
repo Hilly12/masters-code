@@ -298,7 +298,9 @@ def train_dpsgd_weighted(
         weights = reweigh(labels)
 
     elif weighting != "custom":
-        raise ValueError("weighting must be one of ['latent', 'sensitive_attr', 'custom']")
+        raise ValueError(
+            "weighting must be one of ['latent', 'sensitive_attr', 'custom']"
+        )
 
     model = model_class()
     model = ModuleValidator.fix(model)
