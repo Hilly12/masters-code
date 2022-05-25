@@ -185,6 +185,8 @@ good-names=i,
            mu,
            sigma,
            x,
+           n,
+           N,
            _
 
 # Good variable names regexes, separated by a comma. If names match any regex,

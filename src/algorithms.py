@@ -4,6 +4,13 @@ from typing import Sequence
 
 import numpy as np
 import torch
+from opacus import GradSampleModule
+from opacus.accountants import RDPAccountant
+from opacus.accountants.utils import get_noise_multiplier
+from opacus.optimizers import DPOptimizer
+from opacus.privacy_engine import forbid_accumulation_hook
+
+from .utils import NonUniformPoissonSampler, _data_loader_with_sampler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -62,7 +69,7 @@ def latent_reweigh(
     """
 
     dataloader = torch.utils.data.DataLoader(
-        train_loader.dataset, batch_size=train_loader.batch_size
+        train_loader.dataset, batch_size=train_loader.batch_size, shuffle=False
     )
 
     mus = []
@@ -93,3 +100,67 @@ def latent_reweigh(
     weights /= weights.sum()
 
     return weights
+
+
+def setup_weighted_dpsgd(
+    data_loader: torch.utils.data.DataLoader,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    weights: Sequence[float],
+    target_epsilon: float,
+    target_delta: float,
+    max_grad_norm: float,
+    epochs: int,
+):
+    """Sets up the DP-SGD-W optimizer.
+
+    Args:
+        data_loader (torch.utils.data.DataLoader):
+            The training data loader.
+        model (torch.nn.Module):
+            The model to be used during training.
+        optimizer (torch.optim.Optimizer):
+            The optimizer to be used during training.
+        weights (Sequence[float]):
+            The weights for each sample in the dataset.
+        target_epsilon (float):
+            The target epsilon for DP-SGD-W.
+        target_delta (float):
+            The target delta for DP-SGD-W.
+        max_grad_norm (float):
+            The gradient clipping bound for DP-SGD-W.
+    """
+
+    model = GradSampleModule(model)
+    model.register_forward_pre_hook(forbid_accumulation_hook)
+
+    N = len(data_loader.dataset)
+    sample_rate = 1 / len(data_loader)
+    expected_batch_size = int(N * sample_rate)
+
+    batch_sampler = NonUniformPoissonSampler(
+        weights=weights, num_samples=N, sample_rate=sample_rate
+    )
+
+    dp_loader = _data_loader_with_sampler(data_loader, batch_sampler)
+
+    accountant = RDPAccountant()
+
+    optimizer = DPOptimizer(
+        optimizer=optimizer,
+        noise_multiplier=get_noise_multiplier(
+            target_epsilon=target_epsilon,
+            target_delta=target_delta,
+            sample_rate=sample_rate,
+            epochs=epochs,
+            accountant=accountant.mechanism(),
+        ),
+        max_grad_norm=max_grad_norm,
+        expected_batch_size=expected_batch_size,
+    )
+
+    optimizer.attach_step_hook(
+        accountant.get_optimizer_hook_fn(sample_rate=sample_rate)
+    )
+
+    return dp_loader, model, optimizer, accountant

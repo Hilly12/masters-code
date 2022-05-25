@@ -1,27 +1,23 @@
 """Source code for training models. """
 
-from typing import Mapping, Sequence, Tuple, Optional, Type
+from typing import Any, Callable, Mapping, Optional, Sequence, Tuple, Type
 
 import numpy as np
 import torch
-from opacus import PrivacyEngine, GradSampleModule
-from opacus.accountants import RDPAccountant
-from opacus.accountants.utils import get_noise_multiplier
-from opacus.optimizers import DPOptimizer
-from opacus.privacy_engine import forbid_accumulation_hook
-from opacus.validators import ModuleValidator
+from opacus import PrivacyEngine
 from opacus.utils.batch_memory_manager import BatchMemoryManager
+from opacus.validators import ModuleValidator
 from tqdm import tqdm
 
-from .algorithms import reweigh, latent_reweigh
-from .utils import NonUniformPoissonSampler, _data_loader_with_sampler
-
+from .algorithms import latent_reweigh, reweigh, setup_weighted_dpsgd
+from .utils import WeightedDataLoader
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def train_vanilla(
     train_loader: torch.utils.data.DataLoader,
+    val_loader: Optional[torch.utils.data.DataLoader],
     model_class: Type[torch.nn.Module],
     optim_class: Type[torch.optim.Optimizer],
     loss_fn: torch.nn.Module,
@@ -33,6 +29,8 @@ def train_vanilla(
     Args:
         train_loader (torch.utils.data.DataLoader):
             The training data loader.
+        val_loader (Optional[torch.utils.data.DataLoader]):
+            The validation data loader. If None, validation is not performed.
         model_class (Type[torch.nn.Module]):
             The class of the model to be used during training.
         optim_class (Type[torch.optim.Optimizer]):
@@ -101,6 +99,7 @@ def train_vanilla(
 
 def train_dpsgd(
     train_loader: torch.utils.data.DataLoader,
+    val_loader: Optional[torch.utils.data.DataLoader],
     model_class: Type[torch.nn.Module],
     optim_class: Type[torch.optim.Optimizer],
     loss_fn: torch.nn.Module,
@@ -116,6 +115,8 @@ def train_dpsgd(
     Args:
         train_loader (torch.utils.data.DataLoader):
             The training data loader.
+        val_loader (Optional[torch.utils.data.DataLoader]):
+            The validation data loader. If None, validation is not performed.
         model_class (Type[torch.nn.Module]):
             The class of the model to be used during training.
         optim_class (Type[torch.optim.Optimizer]):
@@ -213,6 +214,7 @@ def train_dpsgd(
 
 def train_dpsgd_weighted(
     train_loader: torch.utils.data.DataLoader,
+    val_loader: Optional[torch.utils.data.DataLoader],
     model_class: Type[torch.nn.Module],
     optim_class: Type[torch.optim.Optimizer],
     loss_fn: torch.nn.Module,
@@ -233,6 +235,8 @@ def train_dpsgd_weighted(
     Args:
         train_loader (torch.utils.data.DataLoader):
             The training data loader.
+        val_loader (Optional[torch.utils.data.DataLoader]):
+            The validation data loader. If None, validation is not performed.
         model_class (Type[torch.nn.Module]):
             The class of the model to be used during training.
         optim_class (Type[torch.optim.Optimizer]):
@@ -296,34 +300,15 @@ def train_dpsgd_weighted(
     criterion = loss_fn
     optimizer = optim_class(model.parameters(), **kwargs)
 
-    model = GradSampleModule(model)
-    model.register_forward_pre_hook(forbid_accumulation_hook)
-
-    sample_rate = 1 / len(train_loader)
-    expected_batch_size = int(len(train_loader.dataset) * sample_rate)
-
-    batch_sampler = NonUniformPoissonSampler(
-        weights=weights, num_samples=len(train_loader.dataset), sample_rate=sample_rate
-    )
-
-    train_loader = _data_loader_with_sampler(train_loader, batch_sampler)
-
-    accountant = RDPAccountant()
-    optimizer = DPOptimizer(
+    train_loader, model, optimizer, accountant = setup_weighted_dpsgd(
+        data_loader=train_loader,
+        model=model,
         optimizer=optimizer,
-        noise_multiplier=get_noise_multiplier(
-            target_epsilon=target_epsilon,
-            target_delta=target_delta,
-            sample_rate=sample_rate,
-            epochs=epochs,
-            accountant=accountant.mechanism(),
-        ),
+        weights=weights,
+        target_epsilon=target_epsilon,
+        target_delta=target_delta,
         max_grad_norm=max_grad_norm,
-        expected_batch_size=expected_batch_size,
-    )
-
-    optimizer.attach_step_hook(
-        accountant.get_optimizer_hook_fn(sample_rate=sample_rate)
+        epochs=epochs,
     )
 
     model.train()
@@ -395,7 +380,7 @@ def train_pate(
         train_loader (torch.utils.data.DataLoader):
             The training dataloader used to train the teacher ensemble model.
         student_loader (torch.utils.data.DataLoader):
-            The training dataloader used to train the student model.
+            The training dataloader for the public data used to train the student model.
         model_class (Type[torch.nn.Module]):
             The class of the model to be used during training.
         optim_class (Type[torch.optim.Optimizer]):
@@ -437,7 +422,7 @@ def train_pate(
 
         model.train()
 
-        for epoch in tqdm(range(epochs)):
+        for _ in tqdm(range(epochs)):
             epoch_losses = []
             epoch_accuracies = []
 
@@ -476,7 +461,7 @@ def train_pate(
         outputs = torch.zeros(0, dtype=torch.long)
 
         model.eval()
-        for images, target in student_loader:
+        for images, _ in student_loader:
             output = model(images)
             probs = torch.argmax(output, dim=1)
             outputs = torch.cat((outputs, probs))
@@ -542,3 +527,44 @@ def train_pate(
 
     metrics = {"student_loss": losses, "student_accuracy": accuracies}
     return student_model, metrics
+
+
+def train_vae(
+    train_loader: torch.data.utils.DataLoader,
+    val_loader: Optional[torch.data.utils.DataLoader],
+    model_class: Type[torch.nn.Module],
+    optim_class: Type[torch.optim.Optimizer],
+    loss_fn: Callable[Any, torch.Tensor],
+    latent_dim: int,
+    beta: float,
+    epochs: int,
+    **kwargs,
+):
+
+    vae_train_loader = WeightedDataLoader(train_loader)
+
+    vae = model_class(latent_dim).to(device)
+    optimizer = optim_class(vae.parameters(), **kwargs)
+
+    vae.train()
+    losses = []
+
+    for _ in range(epochs):
+        for img, _ in tqdm(vae_train_loader):
+            optimizer.zero_grad()
+
+            x = img.to(device)
+
+            recon_x, mu, logvar = vae(x)
+
+            loss = loss_fn(recon_x, x, mu, logvar, beta)
+
+            losses.append(loss.item())
+
+            loss.backward()
+            optimizer.step()
+
+        weights = latent_reweigh(vae_train_loader.dataset, vae)
+        vae_train_loader.update_weights(weights)
+
+    return vae
