@@ -1,4 +1,4 @@
-"""Algorithms to supplement the training code. """
+"""Core API"""
 
 from typing import Sequence, Union
 

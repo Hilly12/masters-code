@@ -1,4 +1,4 @@
-"""Tools for handling data."""
+"""Tools for handling data"""
 
 from typing import List, Sequence, Union
 

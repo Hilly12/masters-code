@@ -1,4 +1,4 @@
-"""Source code for training models. """
+"""Sample code for training models"""
 
 from typing import Callable, Mapping, Optional, Sequence, Tuple, Type
 

@@ -1,4 +1,4 @@
-"""Utilities."""
+"""Utilities"""
 
 from typing import List, Tuple, Union
 
