@@ -1,3 +1,4 @@
-# Masters Code
+# PriFair
 
-Code to supplement my masters thesis.
+A library of tools for training private and fair machine learning models.
+Supplementary to my thesis.
