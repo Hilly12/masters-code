@@ -1,6 +1,6 @@
 """Sample code for training models"""
 
-from typing import Callable, Mapping, Optional, Sequence, Tuple, Type
+from typing import Mapping, Optional, Sequence, Tuple, Type
 
 import numpy as np
 import torch
@@ -10,7 +10,6 @@ from opacus.validators import ModuleValidator
 from tqdm import tqdm
 
 from .core import latent_reweigh, reweigh, setup_weighted_dpsgd
-from .data import WeightedDataLoader
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -538,44 +537,3 @@ def train_pate(
 
     metrics = {"student_loss": losses, "student_accuracy": accuracies}
     return student_model, metrics
-
-
-def train_vae(
-    train_loader: torch.utils.data.DataLoader,
-    val_loader: Optional[torch.utils.data.DataLoader],
-    model_class: Type[torch.nn.Module],
-    optim_class: Type[torch.optim.Optimizer],
-    loss_fn: Callable[..., torch.Tensor],
-    latent_dim: int,
-    beta: float,
-    epochs: int,
-    **kwargs,
-):
-
-    vae_train_loader = WeightedDataLoader(train_loader)
-
-    vae = model_class(latent_dim).to(device)
-    optimizer = optim_class(vae.parameters(), **kwargs)
-
-    vae.train()
-    losses = []
-
-    for _ in range(epochs):
-        for img, _ in tqdm(vae_train_loader):
-            optimizer.zero_grad()
-
-            x = img.to(device)
-
-            recon_x, mu, logvar = vae(x)
-
-            loss = loss_fn(recon_x, x, mu, logvar, beta)
-
-            losses.append(loss.item())
-
-            loss.backward()
-            optimizer.step()
-
-        weights = latent_reweigh(vae_train_loader.dataset, vae)
-        vae_train_loader.update_weights(weights)
-
-    return vae
