@@ -139,6 +139,7 @@ def setup_weighted_dpsgd(
 
     N = len(data_loader.dataset)
     sample_rate = 1 / len(data_loader)
+    max_sample_rate = np.max(weights) * N * sample_rate
     expected_batch_size = int(N * sample_rate)
 
     batch_sampler = NonUniformPoissonSampler(
@@ -154,7 +155,7 @@ def setup_weighted_dpsgd(
         noise_multiplier=get_noise_multiplier(
             target_epsilon=target_epsilon,
             target_delta=target_delta,
-            sample_rate=sample_rate,
+            sample_rate=max_sample_rate,
             epochs=epochs,
             accountant=accountant.mechanism(),
         ),
