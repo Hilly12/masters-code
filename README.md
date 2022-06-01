@@ -10,6 +10,28 @@ pip install git+https://github.com/Hilly12/prifair.git
 
 ## Usage
 
+Debiased VAE
+
+```python
+vae_train_loader = pf.data.WeightedDataLoader(unlabelled_data_loader)
+
+for epoch in range(num_epochs):
+    for img, _ in tqdm(vae_train_loader):
+        optimizer.zero_grad()
+
+        x = img.to(device)
+        recon_x, mu, logvar = vae(x)
+
+        loss = vae.loss_function(recon_x, x, mu, logvar, beta)
+
+        loss.backward()
+        optimizer.step()
+
+    # Update Weights
+    weights = pf.core.latent_reweigh(vae_train_loader, vae)
+    vae_train_loader.update_weights(weights)
+```
+
 Reweighed DPSGD
 
 ```python
