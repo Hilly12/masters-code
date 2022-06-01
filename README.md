@@ -20,7 +20,7 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
 
         x = img.to(device)
-        recon_x, mu, logvar = vae(x)
+        recon_x, mu, logvar = vae_model(x)
 
         loss = vae.loss_function(recon_x, x, mu, logvar, beta)
 
@@ -28,7 +28,7 @@ for epoch in range(num_epochs):
         optimizer.step()
 
     # Update Weights
-    weights = pf.core.latent_reweigh(vae_train_loader, vae)
+    weights = pf.core.latent_reweigh(vae_train_loader, vae_model)
     vae_train_loader.update_weights(weights)
 ```
 
