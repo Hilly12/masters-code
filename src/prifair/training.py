@@ -288,12 +288,14 @@ def train_dpsgd_weighted(
 
     if weighting == "latent":
         if vae is None:
-            raise ValueError("vae cannot be None if weighting is set to 'latent'")
+            raise ValueError("vae cannot be None if weighting is 'latent'")
 
         weights = latent_reweigh(train_loader, vae, alpha=alpha, k=k)
 
     elif weighting == "sensitive_attr":
-        labels = kwargs.pop("labels")
+        if labels is None:
+            raise ValueError("labels cannot be None if weighting is 'sensitive_attr'")
+
         weights = reweigh(labels)
 
     elif weighting != "custom":
