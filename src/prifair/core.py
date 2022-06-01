@@ -26,13 +26,16 @@ def reweigh(labels: Sequence[int]) -> np.ndarray:
     Returns:
         np.ndarray:
             The inverse weighting for each sample in the dataset.
+
+    Usage:
+        >>> reweigh([0, 1, 1, 2, 3])
+        array([0.25, 0.125, 0.125, 0.25, 0.25])
     """
 
     num_samples = len(labels)
-    labels = np.array(labels)
 
     sensitive_groups = []
-    for value, counts in np.unique(labels, return_counts=True):
+    for value, counts in zip(*np.unique(labels, return_counts=True)):
         sensitive_groups.append((labels == value, counts))
 
     n_unique = len(sensitive_groups)
