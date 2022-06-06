@@ -1,7 +1,0 @@
-black
-numpy
-opacus==1.1.1
-pylint
-torch
-torchvision
-tqdm
