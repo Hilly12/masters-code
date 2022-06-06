@@ -83,20 +83,18 @@ def latent_reweigh(
 
     mu = np.concatenate(mus)
 
-    bin_edges = np.histogram_bin_edges(mu.reshape(-1), bins=k)
-    bin_edges[0] = float("-inf")
-    bin_edges[-1] = float("inf")
-
     weights = np.zeros(mu.shape[0])
     latent_dim = mu.shape[1]
     for i in range(latent_dim):
-        hist = np.histogram(mu[:, i], density=True, bins=bin_edges)[0]
-        bin_idxs = np.digitize(mu[:, i], bin_edges)
+        hist, bin_edges = np.histogram(mu[:, i], density=True, bins=k)
+        bin_edges[0] = float("-inf")
+        bin_edges[-1] = float("inf")
 
         hist += alpha
-        hist = hist / np.sum(hist)
+        hist = hist / hist.sum()
+        bin_idxs = np.digitize(mu[:, i], bin_edges)
 
-        p = 1.0 / (hist[bin_idxs - 1])
+        p = 1.0 / hist[bin_idxs - 1]
         p /= p.sum()
 
         weights = np.maximum(weights, p)
@@ -159,7 +157,7 @@ def setup_weighted_dpsgd(
             target_epsilon=target_epsilon,
             target_delta=target_delta,
             sample_rate=max_sample_rate,
-            epochs=epochs,
+            steps=int(epochs / sample_rate),
             accountant=accountant.mechanism(),
         ),
         max_grad_norm=max_grad_norm,
