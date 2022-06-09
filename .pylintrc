@@ -7,7 +7,7 @@ max-statements=80
 max-locals=50
 
 # Maximum number of arguments for function / method
-max-args=15
+max-args=20
 
 [TYPECHECK]
 
@@ -184,8 +184,11 @@ good-names=i,
            mu,
            sigma,
            x,
+           m,
            n,
            N,
+           C,
+           C0,
            _
 
 # Good variable names regexes, separated by a comma. If names match any regex,
