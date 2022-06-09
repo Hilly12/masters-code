@@ -9,8 +9,10 @@ from opacus.accountants import RDPAccountant
 from opacus.accountants.utils import get_noise_multiplier
 from opacus.optimizers import DPOptimizer
 from opacus.privacy_engine import forbid_accumulation_hook
+from opacus.utils.uniform_sampler import UniformWithReplacementSampler
 
 from .data import NonUniformPoissonSampler
+from .optimizers import DPSGDFOptimizer
 from .utils import _data_loader_with_sampler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -163,6 +165,75 @@ def setup_weighted_dpsgd(
         max_grad_norm=max_grad_norm,
         expected_batch_size=expected_batch_size,
     )
+
+    optimizer.attach_step_hook(
+        accountant.get_optimizer_hook_fn(sample_rate=sample_rate)
+    )
+
+    return dp_loader, model, optimizer, accountant
+
+
+def setup_adaptive_clipped_dpsgd(
+    data_loader: torch.utils.data.DataLoader,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    target_epsilon: float,
+    target_delta: float,
+    epochs: int,
+    clipping: str = "dpsgdf",
+    **kwargs
+):
+    """Sets up the DP-SGD-W optimizer.
+
+    Args:
+        data_loader (torch.utils.data.DataLoader):
+            The training data loader.
+        model (torch.nn.Module):
+            The model to be used during training.
+        optimizer (torch.optim.Optimizer):
+            The optimizer to be used during training.
+        target_epsilon (float):
+            The target epsilon for DP-SGD-W.
+        target_delta (float):
+            The target delta for DP-SGD-W.
+        max_grad_norm (float):
+            The gradient clipping bound for DP-SGD-W.
+        clipping (str):
+            The clipping method to use. Takes values ["dpsgdf", "fairdp"].
+            Defaults to "dpsgdf".
+        **kwargs:
+            Passed to the ``opacus.optimizers.DPOptimizer`` wrapper.
+    """
+
+    model = GradSampleModule(model)
+    model.register_forward_pre_hook(forbid_accumulation_hook)
+
+    N = len(data_loader.dataset)
+    sample_rate = 1 / len(data_loader)
+    expected_batch_size = int(N * sample_rate)
+
+    batch_sampler = UniformWithReplacementSampler(
+        num_samples=N, sample_rate=sample_rate
+    )
+    dp_loader = _data_loader_with_sampler(data_loader, batch_sampler)
+
+    accountant = RDPAccountant()
+
+    if clipping == "dpsgdf":
+        optimizer = DPSGDFOptimizer(
+            optimizer=optimizer,
+            noise_multiplier=get_noise_multiplier(
+                target_epsilon=target_epsilon,
+                target_delta=target_delta,
+                sample_rate=sample_rate,
+                steps=int(epochs / sample_rate),
+                accountant=accountant.mechanism(),
+            ),
+            expected_batch_size=expected_batch_size,
+            **kwargs
+        )
+    else:
+        raise ValueError("``clipping`` must be one of ['dpsgdf', 'fairdp']")
 
     optimizer.attach_step_hook(
         accountant.get_optimizer_hook_fn(sample_rate=sample_rate)

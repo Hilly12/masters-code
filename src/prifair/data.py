@@ -1,13 +1,13 @@
 """Tools for handling data"""
 
-from typing import List, Sequence, Union
+from typing import Sequence, Union
 
 import numpy as np
 import torch
-from torch.utils.data import Sampler
+from opacus.utils.uniform_sampler import UniformWithReplacementSampler
 
 
-class NonUniformPoissonSampler(Sampler[List[int]]):
+class NonUniformPoissonSampler(UniformWithReplacementSampler):
     """A non-uniform weighted Poisson batch sampler."""
 
     # pylint: disable=W0231

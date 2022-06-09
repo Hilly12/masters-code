@@ -1,6 +1,6 @@
 """Sample code for training models"""
 
-from typing import Mapping, Optional, Sequence, Tuple, Type
+from typing import Any, Mapping, Optional, Sequence, Tuple, Type
 
 import numpy as np
 import torch
@@ -9,7 +9,12 @@ from opacus.utils.batch_memory_manager import BatchMemoryManager
 from opacus.validators import ModuleValidator
 from tqdm import tqdm
 
-from .core import latent_reweigh, reweigh, setup_weighted_dpsgd
+from .core import (  # isort:skip
+    latent_reweigh,
+    reweigh,
+    setup_adaptive_clipped_dpsgd,
+    setup_weighted_dpsgd,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -64,10 +69,11 @@ def train_vanilla(
         epoch_losses = []
         epoch_accuracies = []
 
-        for images, target in tqdm(train_loader):
+        for batch in tqdm(train_loader):
             optimizer.zero_grad()
-            images = images.to(device)
-            target = target.to(device)
+
+            images = batch[0].to(device)
+            target = batch[1].to(device)
 
             output = model(images)
             loss = criterion(output, target)
@@ -174,12 +180,11 @@ def train_dpsgd(
             optimizer=optimizer,
         ) as memory_safe_data_loader:
 
-            for images, target in tqdm(memory_safe_data_loader):
+            for batch in tqdm(memory_safe_data_loader):
                 optimizer.zero_grad()
-                model.zero_grad()
 
-                images = images.to(device)
-                target = target.to(device)
+                images = batch[0].to(device)
+                target = batch[1].to(device)
 
                 output = model(images)
                 loss = criterion(output, target)
@@ -339,10 +344,11 @@ def train_dpsgd_weighted(
             optimizer=optimizer,
         ) as memory_safe_data_loader:
 
-            for images, target in tqdm(memory_safe_data_loader):
+            for batch in tqdm(memory_safe_data_loader):
                 optimizer.zero_grad()
-                images = images.to(device)
-                target = target.to(device)
+
+                images = batch[0].to(device)
+                target = batch[1].to(device)
 
                 output = model(images)
                 loss = criterion(output, target)
@@ -438,10 +444,11 @@ def train_pate(
             epoch_losses = []
             epoch_accuracies = []
 
-            for images, target in teacher_loaders[i]:
+            for batch in teacher_loaders[i]:
                 optimizer.zero_grad()
-                images = images.to(device)
-                target = target.to(device)
+
+                images = batch[0].to(device)
+                target = batch[1].to(device)
 
                 output = model(images)
                 loss = criterion(output, target)
@@ -490,8 +497,8 @@ def train_pate(
     labels = label_counts.argmax(dim=1)
 
     def gen_student_loader(student_loader, labels):
-        for i, (imgs, _) in enumerate(iter(student_loader)):
-            yield imgs, labels[i * len(imgs) : (i + 1) * len(imgs)]
+        for i, batch in enumerate(iter(student_loader)):
+            yield batch[0], labels[i * len(batch[0]) : (i + 1) * len(batch[0])]
 
     student_model = model_class()
     student_model.to(device)
@@ -511,6 +518,7 @@ def train_pate(
         generator = gen_student_loader(student_loader, labels)
         for images, target in tqdm(generator, total=len(student_loader)):
             optimizer.zero_grad()
+
             images = images.to(device)
             target = target.to(device)
 
@@ -539,3 +547,144 @@ def train_pate(
 
     metrics = {"student_loss": losses, "student_accuracy": accuracies}
     return student_model, metrics
+
+
+def train_dpsgdf(
+    train_loader: torch.utils.data.DataLoader,
+    val_loader: Optional[torch.utils.data.DataLoader],
+    model_class: Type[torch.nn.Module],
+    optim_class: Type[torch.optim.Optimizer],
+    loss_fn: torch.nn.Module,
+    target_epsilon: float,
+    target_delta: float,
+    base_clipping_threshold: float,
+    epochs: int,
+    group_labels: torch.Tensor,
+    max_physical_batch_size: int = 512,
+    log_thresholds: bool = True,
+    **kwargs,
+) -> Tuple[torch.nn.Module, Mapping[str, Any]]:
+    """Train a model with DPSGD-F in the given environment.
+    Note that if the lot size is larger than `max_physical_batch_size`, the
+    batch memory manager will split it into two lots which will be processed
+    separately by the adaptive clipper.
+
+    Args:
+        train_loader (torch.utils.data.DataLoader):
+            The training data loader.
+        val_loader (Optional[torch.utils.data.DataLoader]):
+            The validation data loader. If None, validation is not performed.
+        model_class (Type[torch.nn.Module]):
+            The class of the model to be used during training.
+        optim_class (Type[torch.optim.Optimizer]):
+            The class of the optimizer to be used during training.
+        loss_fn (torch.nn.Module):
+            The loss function.
+        target_epsilon (float):
+            The target epsilon for DP-SGD.
+        target_delta (float):
+            The target delta for DP-SGD.
+        base_clipping_threshold (float):
+            Base gradient clipping bound for DP-SGD.
+        epochs (float):
+            Number of epochs to train for.
+        group_labels (torch.Tensor):
+            The group labels for the data.
+        max_physical_batch_size (int, optional):
+            Maximum physical batch size for memory manager. Defaults to 128.
+        log_thresholds (bool, optional):
+            Logs the clipping thresholds at each iteration, storing them in class
+            variable ``DPSGDFOptimizer.thresholds``. Defaults to True.
+        **kwargs:
+            Passed to optim_class constructor.
+
+    Returns:
+        Tuple[torch.nn.Module, Mapping[str, Any]]:
+            The trained model and a dictionary consisting of train-time metrics.
+    """
+
+    model = model_class()
+    model = ModuleValidator.fix(model)
+    assert not ModuleValidator.validate(model, strict=False)
+
+    model = model.to(device)
+
+    criterion = loss_fn
+    optimizer = optim_class(model.parameters(), **kwargs)
+
+    n_groups = group_labels.max() + 1
+    if not torch.all(torch.unique(group_labels) == torch.arange(n_groups)):
+        raise ValueError(
+            "Group labels must be unique and sequential starting from 0. \
+            i.e. 0, 1, 2, ..."
+        )
+
+    train_loader, model, optimizer, accountant = setup_adaptive_clipped_dpsgd(
+        data_loader=train_loader,
+        model=model,
+        optimizer=optimizer,
+        target_epsilon=target_epsilon,
+        target_delta=target_delta,
+        base_clipping_threshold=base_clipping_threshold,
+        epochs=epochs,
+        n_groups=n_groups,
+        log_thresholds=log_thresholds,
+    )
+
+    model.train()
+    losses = []
+    accuracies = []
+
+    print("Training Model...")
+
+    for epoch in range(epochs):
+        epoch_losses = []
+        epoch_accuracies = []
+
+        with BatchMemoryManager(
+            data_loader=train_loader,
+            max_physical_batch_size=max_physical_batch_size,
+            optimizer=optimizer,
+        ) as memory_safe_data_loader:
+
+            for images, target, idxs in tqdm(memory_safe_data_loader):
+                optimizer.zero_grad()
+
+                images = images.to(device)
+                target = target.to(device)
+
+                output = model(images)
+                loss = criterion(output, target)
+
+                preds = np.argmax(output.detach().cpu().numpy(), axis=1)
+                labels = target.detach().cpu().numpy()
+
+                acc = (preds == labels).mean()
+
+                epoch_losses.append(loss.item())
+                epoch_accuracies.append(acc)
+
+                loss.backward()
+                optimizer.update_cached_params(
+                    group_labels=group_labels[idxs].to(device)
+                )
+                optimizer.step()
+
+        epsilon = accountant.get_epsilon(target_delta)
+
+        print(
+            f"Train Epoch: {epoch + 1} "
+            f"Loss: {np.mean(epoch_losses):.6f} "
+            f"Acc@1: {np.mean(epoch_accuracies) * 100:.6f} "
+            f"(ε = {epsilon:.2f}, δ = {target_delta})"
+        )
+
+        losses.extend(epoch_losses)
+        accuracies.extend(epoch_accuracies)
+
+    metrics = {
+        "loss": losses,
+        "accuracy": accuracies,
+        "thresholds": optimizer.thresholds,
+    }
+    return model, metrics

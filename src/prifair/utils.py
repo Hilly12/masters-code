@@ -1,6 +1,6 @@
 """Utilities"""
 
-from typing import List, Tuple, Union
+from typing import List, Tuple, Type, Union
 
 import numpy as np
 import torch
@@ -102,6 +102,32 @@ def evaluate_model(
         return np.concatenate(pred_list), np.concatenate(raw_outputs)
 
     return np.concatenate(pred_list)
+
+
+def dataset_with_indices(cls: Type) -> Type:
+    """Modifies the given Dataset class's dunder method __getitem__ to
+    return a tuple data, target, index instead of data, target.
+
+    Args:
+        cls (Type):
+            The dataset class to modify.
+
+    Returns:
+        Type:
+            The modified Dataset class.
+    """
+
+    def __getitem__(self, index):
+        data, target = cls.__getitem__(self, index)
+        return data, target, index
+
+    return type(
+        cls.__name__,
+        (cls,),
+        {
+            "__getitem__": __getitem__,
+        },
+    )
 
 
 def _shape_safe(x):
