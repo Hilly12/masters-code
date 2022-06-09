@@ -79,8 +79,8 @@ def latent_reweigh(
     )
 
     mus = []
-    for imgs, _ in dataloader:
-        mu, _ = vae.encode(imgs.to(device))
+    for batch in dataloader:
+        mu, _ = vae.encode(batch[0].to(device))
         mus.append(mu.cpu().detach().numpy())
 
     mu = np.concatenate(mus)
