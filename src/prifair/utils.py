@@ -33,9 +33,9 @@ def validate_model(
     accuracies = []
 
     with torch.no_grad():
-        for data, target in val_loader:
-            data = data.to(device)
-            target = target.to(device)
+        for batch in val_loader:
+            data = batch[0].to(device)
+            target = batch[1].to(device)
 
             output = model(data)
             loss = loss_fn(output, target)
@@ -81,12 +81,12 @@ def evaluate_model(
     pred_list = []
     raw_outputs = []
     with torch.no_grad():
-        for images, target in test_loader:
-            images = images.to(device)
+        for batch in test_loader:
+            images = batch[0].to(device)
 
             output = model(images).detach().cpu()
             preds = np.argmax(output, axis=1).numpy()
-            labels = target.numpy()
+            labels = batch[1].numpy()
 
             correct += (preds == labels).sum()
 
