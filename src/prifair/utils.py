@@ -8,7 +8,27 @@ import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def validate_model(model, val_loader, loss_fn):
+def validate_model(
+    model: torch.nn.Module,
+    val_loader: torch.utils.data.DataLoader,
+    loss_fn: torch.nn.Module,
+) -> Tuple[List[int], List[int]]:
+    """Validates the model on the validation set.
+
+    Args:
+        model (torch.nn.Module):
+            The model to validate.
+        val_loader (torch.utils.data.DataLoader):
+            The validation data loader.
+        loss_fn (torch.nn.Module):
+            The loss function to use.
+
+    Returns:
+        Tuple[List[int], List[int]]:
+            The validation losses and the validation accuracies for each iteration
+            in the epoch.
+    """
+
     losses = []
     accuracies = []
 
