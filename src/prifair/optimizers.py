@@ -190,7 +190,7 @@ class DPSGDFOptimizer(DPOptimizer):
         group_labels: torch.Tensor,
         closure: Optional[Callable[[], float]] = None
     ) -> Optional[float]:
-        assert torch.sum((0 <= group_labels) & (group_labels < self.n_groups)) == 0
+
         self.sample_group_labels = group_labels
 
         if closure is not None:
