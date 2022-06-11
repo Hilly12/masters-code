@@ -1,9 +1,11 @@
 """Utilities"""
 
-from typing import List, Tuple, Type, Union
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
+
+from .data import SamplerWrapper
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -104,32 +106,6 @@ def evaluate_model(
     return np.concatenate(pred_list)
 
 
-def dataset_with_indices(cls: Type) -> Type:
-    """Modifies the given Dataset class's dunder method __getitem__ to
-    return a tuple data, target, index instead of data, target.
-
-    Args:
-        cls (Type):
-            The dataset class to modify.
-
-    Returns:
-        Type:
-            The modified Dataset class.
-    """
-
-    def __getitem__(self, index):
-        data, target = cls.__getitem__(self, index)
-        return data, target, index
-
-    return type(
-        cls.__name__,
-        (cls,),
-        {
-            "__getitem__": __getitem__,
-        },
-    )
-
-
 def _shape_safe(x):
     return x.shape if hasattr(x, "shape") else ()
 
@@ -147,10 +123,14 @@ def _wrap_collate_with_empty(data_loader):
     return collate
 
 
-def _data_loader_with_sampler(
+def _data_loader_with_batch_sampler(
     data_loader: torch.utils.data.DataLoader,
     batch_sampler: torch.utils.data.Sampler[List[int]],
+    wrap: bool = False,
 ) -> torch.utils.data.DataLoader:
+
+    if wrap:
+        batch_sampler = SamplerWrapper(batch_sampler)
 
     return torch.utils.data.DataLoader(
         dataset=data_loader.dataset,

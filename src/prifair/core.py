@@ -13,7 +13,7 @@ from opacus.utils.uniform_sampler import UniformWithReplacementSampler
 
 from .data import NonUniformPoissonSampler
 from .optimizers import DPSGDFOptimizer
-from .utils import _data_loader_with_sampler
+from .utils import _data_loader_with_batch_sampler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -148,8 +148,7 @@ def setup_weighted_dpsgd(
     batch_sampler = NonUniformPoissonSampler(
         weights=weights, num_samples=N, sample_rate=sample_rate
     )
-
-    dp_loader = _data_loader_with_sampler(data_loader, batch_sampler)
+    dp_loader = _data_loader_with_batch_sampler(data_loader, batch_sampler, wrap=True)
 
     accountant = RDPAccountant()
 
@@ -215,7 +214,7 @@ def setup_adaptive_clipped_dpsgd(
     batch_sampler = UniformWithReplacementSampler(
         num_samples=N, sample_rate=sample_rate
     )
-    dp_loader = _data_loader_with_sampler(data_loader, batch_sampler)
+    dp_loader = _data_loader_with_batch_sampler(data_loader, batch_sampler, wrap=True)
 
     accountant = RDPAccountant()
 

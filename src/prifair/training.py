@@ -480,8 +480,8 @@ def train_pate(
         outputs = torch.zeros(0, dtype=torch.long)
 
         model.eval()
-        for images, _ in student_loader:
-            output = model(images)
+        for batch in student_loader:
+            output = model(batch[0])
             probs = torch.argmax(output, dim=1)
             outputs = torch.cat((outputs, probs))
 
@@ -647,11 +647,13 @@ def train_dpsgdf(
             optimizer=optimizer,
         ) as memory_safe_data_loader:
 
-            for images, target, idxs in tqdm(memory_safe_data_loader):
+            for batch in tqdm(memory_safe_data_loader):
                 optimizer.zero_grad()
 
-                images = images.to(device)
-                target = target.to(device)
+                idxs = memory_safe_data_loader.last_sampled
+
+                images = batch[0].to(device)
+                target = batch[1].to(device)
 
                 output = model(images)
                 loss = criterion(output, target)

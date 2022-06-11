@@ -8,10 +8,30 @@ from opacus.utils.uniform_sampler import UniformWithReplacementSampler
 
 
 class NonUniformPoissonSampler(UniformWithReplacementSampler):
-    """A non-uniform weighted Poisson batch sampler."""
+    """
+    A non-uniform weighted Poisson batch sampler.
+    """
 
-    # pylint: disable=W0231
-    def __init__(self, weights: np.ndarray, num_samples: int, sample_rate: float):
+    def __init__(
+        self,
+        *,
+        weights: np.ndarray,
+        num_samples: int,
+        sample_rate: float,
+        generator: torch.Generator = None
+    ):
+        """
+        Args:
+            weights (np.ndarray):
+                The weights for each sample in the dataset.
+            num_samples (int):
+                The number of samples to draw.
+            sample_rate (float):
+                The probability used in sampling.
+            generator (torch.Generator, optional):
+                The generator used to sample random numbers. Defaults to None.
+        """
+
         assert num_samples > 0
         assert len(weights) == num_samples
 
@@ -20,22 +40,49 @@ class NonUniformPoissonSampler(UniformWithReplacementSampler):
         self.weighted_sample_rates = torch.as_tensor(
             sample_rate * weights * num_samples, dtype=torch.double
         )
-
-    def __len__(self):
-        return int(1 / self.sample_rate)
+        self.generator = generator
 
     def __iter__(self):
         num_batches = int(1 / self.sample_rate)
         while num_batches > 0:
-            mask = torch.rand(self.num_samples) < self.weighted_sample_rates
+            mask = (
+                torch.rand(self.num_samples, generator=self.generator)
+                < self.weighted_sample_rates
+            )
             indices = mask.nonzero(as_tuple=False).reshape(-1).tolist()
             yield indices
 
             num_batches -= 1
 
 
+class SamplerWrapper(torch.utils.data.Sampler):
+    """
+    A wrapper for a torch.utils.data.Sampler that caches the last item(s)
+    sampled.
+    """
+
+    def __init__(self, sampler: torch.utils.data.Sampler):
+        """
+        Args:
+            sampler (torch.utils.data.Sampler):
+                A torch.utils.data.Sampler to wrap.
+        """
+
+        self.sampler = sampler
+        self.last_sampled = None
+
+    def __len__(self):
+        return self.sampler.__len__()
+
+    def __iter__(self):
+        for x in self.sampler.__iter__():
+            self.last_sampled = x
+            yield x
+
+
 class WeightedDataLoader(torch.utils.data.DataLoader):
-    """A data loader that uses a weighted sampler.
+    """
+    A data loader that uses a weighted sampler.
 
     Args:
         data_loader (torch.utils.data.DataLoader):
