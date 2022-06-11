@@ -148,7 +148,7 @@ def setup_weighted_dpsgd(
     batch_sampler = NonUniformPoissonSampler(
         weights=weights, num_samples=N, sample_rate=sample_rate
     )
-    dp_loader = _data_loader_with_batch_sampler(data_loader, batch_sampler, wrap=True)
+    dp_loader = _data_loader_with_batch_sampler(data_loader, batch_sampler, wrap=False)
 
     accountant = RDPAccountant()
 

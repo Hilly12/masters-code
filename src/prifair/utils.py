@@ -5,8 +5,6 @@ from typing import List, Tuple, Union
 import numpy as np
 import torch
 
-from .data import SamplerWrapper
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -129,10 +127,13 @@ def _data_loader_with_batch_sampler(
     wrap: bool = False,
 ) -> torch.utils.data.DataLoader:
 
-    if wrap:
-        batch_sampler = SamplerWrapper(batch_sampler)
+    data_loader_cls = torch.utils.data.DataLoader
 
-    return torch.utils.data.DataLoader(
+    if wrap:
+        data_loader_cls = _DataLoaderWrapper
+        batch_sampler = _SamplerWrapper(batch_sampler)
+
+    return data_loader_cls(
         dataset=data_loader.dataset,
         batch_sampler=batch_sampler,
         num_workers=data_loader.num_workers,
@@ -145,3 +146,22 @@ def _data_loader_with_batch_sampler(
         prefetch_factor=data_loader.prefetch_factor,
         persistent_workers=data_loader.persistent_workers,
     )
+
+
+class _SamplerWrapper(torch.utils.data.Sampler):
+    def __init__(self, sampler: torch.utils.data.Sampler):
+        self.sampler = sampler
+        self.last_sampled = None
+
+    def __len__(self):
+        return self.sampler.__len__()
+
+    def __iter__(self):
+        for x in self.sampler.__iter__():
+            self.last_sampled = x
+            yield x
+
+
+class _DataLoaderWrapper(torch.utils.data.DataLoader):
+    def get_indices(self):
+        return self._index_sampler.last_sampled

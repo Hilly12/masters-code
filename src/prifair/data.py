@@ -4,7 +4,10 @@ from typing import Sequence, Union
 
 import numpy as np
 import torch
+from opacus.utils.batch_memory_manager import BatchMemoryManager, BatchSplittingSampler
 from opacus.utils.uniform_sampler import UniformWithReplacementSampler
+
+from .utils import _data_loader_with_batch_sampler
 
 
 class NonUniformPoissonSampler(UniformWithReplacementSampler):
@@ -55,29 +58,24 @@ class NonUniformPoissonSampler(UniformWithReplacementSampler):
             num_batches -= 1
 
 
-class SamplerWrapper(torch.utils.data.Sampler):
+class IndexCachingBatchMemoryManager(BatchMemoryManager):
     """
-    A wrapper for a torch.utils.data.Sampler that caches the last item(s)
-    sampled.
+    Context manager to manage memory consumption during training.
+    Adaptation of ``opacus.utils.batch_memory_manager.BatchMemoryManager``.
+    Wraps ``opacus.utils.batch_memory_manager.BatchSplittingSampler`` with
+    a sampler that caches the last indices sampled for access.
+    See ``opacus.utils.batch_memory_manager.BatchMemoryManager`` for more
+    details.
     """
 
-    def __init__(self, sampler: torch.utils.data.Sampler):
-        """
-        Args:
-            sampler (torch.utils.data.Sampler):
-                A torch.utils.data.Sampler to wrap.
-        """
+    def __enter__(self):
+        sampler = BatchSplittingSampler(
+            sampler=self.data_loader.batch_sampler,
+            max_batch_size=self.max_physical_batch_size,
+            optimizer=self.optimizer,
+        )
 
-        self.sampler = sampler
-        self.last_sampled = None
-
-    def __len__(self):
-        return self.sampler.__len__()
-
-    def __iter__(self):
-        for x in self.sampler.__iter__():
-            self.last_sampled = x
-            yield x
+        return _data_loader_with_batch_sampler(self.data_loader, sampler, wrap=True)
 
 
 class WeightedDataLoader(torch.utils.data.DataLoader):

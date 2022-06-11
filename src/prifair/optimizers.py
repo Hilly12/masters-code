@@ -1,6 +1,6 @@
 """Wrappers for optimizers that specific algorithms use during training. """
 
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import torch
 from opacus.optimizers import DPOptimizer
@@ -184,15 +184,20 @@ class DPSGDFOptimizer(DPOptimizer):
 
         return C
 
-    def update_cached_params(self, *, group_labels: torch.Tensor):
-        """Caches the group labels to be used to compute clipping bounds for the
-        iteration.
-
-        Args:
-            group_labels (torch.Tensor):
-                The sensitive group labels of each of the samples in the batch / lot
-                used in the current iteration. Should be of shape (batch_size,).
-        """
-
+    def step(
+        self,
+        *,
+        group_labels: torch.Tensor,
+        closure: Optional[Callable[[], float]] = None
+    ) -> Optional[float]:
         assert torch.sum((0 <= group_labels) & (group_labels < self.n_groups)) == 0
         self.sample_group_labels = group_labels
+
+        if closure is not None:
+            with torch.enable_grad():
+                closure()
+
+        if self.pre_step():
+            return self.original_optimizer.step()
+        else:
+            return None

@@ -9,6 +9,8 @@ from opacus.utils.batch_memory_manager import BatchMemoryManager
 from opacus.validators import ModuleValidator
 from tqdm import tqdm
 
+from .data import IndexCachingBatchMemoryManager
+
 from .core import (  # isort:skip
     latent_reweigh,
     reweigh,
@@ -641,7 +643,7 @@ def train_dpsgdf(
         epoch_losses = []
         epoch_accuracies = []
 
-        with BatchMemoryManager(
+        with IndexCachingBatchMemoryManager(
             data_loader=train_loader,
             max_physical_batch_size=max_physical_batch_size,
             optimizer=optimizer,
@@ -650,7 +652,8 @@ def train_dpsgdf(
             for batch in tqdm(memory_safe_data_loader):
                 optimizer.zero_grad()
 
-                idxs = memory_safe_data_loader.last_sampled
+                idxs = memory_safe_data_loader.get_indices()
+                batch_groups = group_labels[idxs].to(device)
 
                 images = batch[0].to(device)
                 target = batch[1].to(device)
@@ -667,10 +670,7 @@ def train_dpsgdf(
                 epoch_accuracies.append(acc)
 
                 loss.backward()
-                optimizer.update_cached_params(
-                    group_labels=group_labels[idxs].to(device)
-                )
-                optimizer.step()
+                optimizer.step(group_labels=batch_groups)
 
         epsilon = accountant.get_epsilon(target_delta)
 
