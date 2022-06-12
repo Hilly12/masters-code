@@ -686,7 +686,7 @@ def train_pate(
 
         logger.record(epoch_losses, epoch_accs)
         if val_loader is not None:
-            logger.record_val(*validate_model(model, val_loader, criterion))
+            logger.record_val(*validate_model(student_model, val_loader, criterion))
 
         logger.log()
 
