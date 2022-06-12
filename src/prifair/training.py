@@ -10,6 +10,7 @@ from opacus.validators import ModuleValidator
 from tqdm import tqdm
 
 from .data import IndexCachingBatchMemoryManager
+from .utils import Logger, validate_model
 
 from .core import (  # isort:skip
     latent_reweigh,
@@ -17,6 +18,7 @@ from .core import (  # isort:skip
     setup_adaptive_clipped_dpsgd,
     setup_weighted_dpsgd,
 )
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -29,7 +31,7 @@ def train_vanilla(
     loss_fn: torch.nn.Module,
     epochs: int,
     **kwargs,
-) -> Tuple[torch.nn.Module, Mapping[str, Sequence[float]]]:
+) -> Tuple[torch.nn.Module, Mapping[str, Sequence[Any]]]:
     """Train a model in the given environment.
 
     Args:
@@ -49,7 +51,7 @@ def train_vanilla(
             Passed to optim_class constructor.
 
     Returns:
-        Tuple[torch.nn.Module, Mapping[str, Sequence[float]]]:
+        Tuple[torch.nn.Module, Mapping[str, Sequence[Any]]]:
             The trained model and a dictionary consisting of train-time metrics.
     """
 
@@ -64,12 +66,11 @@ def train_vanilla(
     optimizer = optim_class(model.parameters(), **kwargs)
 
     model.train()
-    losses = []
-    accuracies = []
+    logger = Logger()
 
-    for epoch in range(epochs):
+    for _ in range(epochs):
         epoch_losses = []
-        epoch_accuracies = []
+        epoch_accs = []
 
         for batch in tqdm(train_loader):
             optimizer.zero_grad()
@@ -86,22 +87,18 @@ def train_vanilla(
             acc = (preds == labels).mean()
 
             epoch_losses.append(loss.item())
-            epoch_accuracies.append(acc)
+            epoch_accs.append(acc)
 
             loss.backward()
             optimizer.step()
 
-        print(
-            f"Train Epoch: {epoch + 1} "
-            f"Loss: {np.mean(epoch_losses):.6f} "
-            f"Acc@1: {np.mean(epoch_accuracies) * 100:.6f} "
-        )
+        logger.record(epoch_losses, epoch_accs)
+        if val_loader is not None:
+            logger.record_val(*validate_model(model, val_loader, criterion))
 
-        losses.extend(epoch_losses)
-        accuracies.extend(epoch_accuracies)
+        logger.log()
 
-    metrics = {"loss": losses, "accuracy": accuracies}
-    return model, metrics
+    return model, logger.get_metrics()
 
 
 def train_dpsgd(
@@ -116,7 +113,7 @@ def train_dpsgd(
     epochs: int,
     max_physical_batch_size: int = 128,
     **kwargs,
-) -> Tuple[torch.nn.Module, Mapping[str, Sequence[float]]]:
+) -> Tuple[torch.nn.Module, Mapping[str, Sequence[Any]]]:
     """Train a model with DP-SGD in the given environment.
 
     Args:
@@ -144,7 +141,7 @@ def train_dpsgd(
             Passed to optim_class constructor.
 
     Returns:
-        Tuple[torch.nn.Module, Mapping[str, Sequence[float]]]:
+        Tuple[torch.nn.Module, Mapping[str, Sequence[Any]]]:
             The trained model and a dictionary consisting of train-time metrics.
     """
 
@@ -169,12 +166,11 @@ def train_dpsgd(
     )
 
     model.train()
-    losses = []
-    accuracies = []
+    logger = Logger()
 
-    for epoch in range(epochs):
+    for _ in range(epochs):
         epoch_losses = []
-        epoch_accuracies = []
+        epoch_accs = []
 
         with BatchMemoryManager(
             data_loader=train_loader,
@@ -197,25 +193,20 @@ def train_dpsgd(
                 acc = (preds == labels).mean()
 
                 epoch_losses.append(loss.item())
-                epoch_accuracies.append(acc)
+                epoch_accs.append(acc)
 
                 loss.backward()
                 optimizer.step()
 
-            epsilon = privacy_engine.get_epsilon(target_delta)
+        epsilon = privacy_engine.get_epsilon(target_delta)
 
-        print(
-            f"Train Epoch: {epoch + 1} "
-            f"Loss: {np.mean(epoch_losses):.6f} "
-            f"Acc@1: {np.mean(epoch_accuracies) * 100:.6f} "
-            f"(ε = {epsilon:.2f}, δ = {target_delta})"
-        )
+        logger.record(epoch_losses, epoch_accs)
+        if val_loader is not None:
+            logger.record_val(*validate_model(model, val_loader, criterion))
 
-        losses.extend(epoch_losses)
-        accuracies.extend(epoch_accuracies)
+        logger.log(epsilon=epsilon, delta=target_delta)
 
-    metrics = {"loss": losses, "accuracy": accuracies}
-    return model, metrics
+    return model, logger.get_metrics()
 
 
 def train_dpsgd_weighted(
@@ -236,7 +227,7 @@ def train_dpsgd_weighted(
     alpha: float = 0.01,
     k: int = 16,
     **kwargs,
-) -> Tuple[torch.nn.Module, Mapping[str, Sequence[float]]]:
+) -> Tuple[torch.nn.Module, Mapping[str, Sequence[Any]]]:
     """Train a model with DP-SGD-W in the given environment.
 
     Args:
@@ -287,7 +278,7 @@ def train_dpsgd_weighted(
             Passed to optim_class constructor.
 
     Returns:
-        Tuple[torch.nn.Module, Mapping[str, Sequence[float]]]:
+        Tuple[torch.nn.Module, Mapping[str, Sequence[Any]]]:
             The trained model and a dictionary consisting of train-time metrics.
     """
 
@@ -331,14 +322,13 @@ def train_dpsgd_weighted(
     )
 
     model.train()
-    losses = []
-    accuracies = []
+    logger = Logger()
 
     print("Training Model...")
 
-    for epoch in range(epochs):
+    for _ in range(epochs):
         epoch_losses = []
-        epoch_accuracies = []
+        epoch_accs = []
 
         with BatchMemoryManager(
             data_loader=train_loader,
@@ -361,194 +351,20 @@ def train_dpsgd_weighted(
                 acc = (preds == labels).mean()
 
                 epoch_losses.append(loss.item())
-                epoch_accuracies.append(acc)
+                epoch_accs.append(acc)
 
                 loss.backward()
                 optimizer.step()
 
-            epsilon = accountant.get_epsilon(target_delta)
+        epsilon = accountant.get_epsilon(target_delta)
 
-        print(
-            f"Train Epoch: {epoch + 1} "
-            f"Loss: {np.mean(epoch_losses):.6f} "
-            f"Acc@1: {np.mean(epoch_accuracies) * 100:.6f} "
-            f"(ε = {epsilon:.2f}, δ = {target_delta})"
-        )
+        logger.record(epoch_losses, epoch_accs)
+        if val_loader is not None:
+            logger.record_val(*validate_model(model, val_loader, criterion))
 
-        losses.extend(epoch_losses)
-        accuracies.extend(epoch_accuracies)
+        logger.log(epsilon=epsilon, delta=target_delta)
 
-    metrics = {"loss": losses, "accuracy": accuracies}
-    return model, metrics
-
-
-def train_pate(
-    train_loader: torch.utils.data.DataLoader,
-    student_loader: torch.utils.data.DataLoader,
-    model_class: Type[torch.nn.Module],
-    optim_class: Type[torch.optim.Optimizer],
-    loss_fn: torch.nn.Module,
-    n_teachers: int,
-    target_epsilon: float,
-    target_delta: float,
-    epochs: int,
-    **kwargs,
-):
-    """Train a model with PATE in the given environment.
-
-    Args:
-        train_loader (torch.utils.data.DataLoader):
-            The training dataloader used to train the teacher ensemble model.
-        student_loader (torch.utils.data.DataLoader):
-            The training dataloader for the public data used to train the student model.
-        model_class (Type[torch.nn.Module]):
-            The class of the model to be used during training.
-        optim_class (Type[torch.optim.Optimizer]):
-            The class of the optimizer to be used during training.
-        loss_fn (torch.nn.Module):
-            The loss function.
-        n_teachers (int):
-            The number of teachers to use in the ensemble.
-        target_epsilon (float):
-            The target epsilon for DP-SGD-W.
-        target_delta (float):
-            The target delta for DP-SGD-W.
-        epochs (int):
-            The number of epochs to train for.
-        **kwargs:
-            Passed to optim_class constructor.
-    """
-
-    teacher_loaders = []
-    n_train = len(train_loader.dataset)
-    data_size = n_train // n_teachers
-    for i in range(n_teachers):
-        idxs = list(range(i * data_size, max((i + 1) * data_size, n_train)))
-        subset_data = torch.utils.data.Subset(train_loader.dataset, idxs)
-        loader = torch.utils.data.DataLoader(
-            subset_data, batch_size=train_loader.batch_size, shuffle=True
-        )
-        teacher_loaders.append(loader)
-
-    criterion = loss_fn
-    teachers = []
-
-    print(f"Training {n_teachers} Teacher Models...")
-
-    for i in range(n_teachers):
-        model = model_class()
-        model.to(device)
-        optimizer = optim_class(model.parameters(), **kwargs)
-
-        model.train()
-
-        for _ in tqdm(range(epochs)):
-            epoch_losses = []
-            epoch_accuracies = []
-
-            for batch in teacher_loaders[i]:
-                optimizer.zero_grad()
-
-                images = batch[0].to(device)
-                target = batch[1].to(device)
-
-                output = model(images)
-                loss = criterion(output, target)
-
-                preds = np.argmax(output.detach().cpu().numpy(), axis=1)
-                labels = target.detach().cpu().numpy()
-
-                acc = (preds == labels).mean()
-
-                epoch_losses.append(loss.item())
-                epoch_accuracies.append(acc)
-
-                loss.backward()
-                optimizer.step()
-
-        teachers.append(model.cpu())
-
-        print(
-            f"Teacher Model: {i + 1} "
-            f"Loss: {np.mean(epoch_losses):.6f} "
-            f"Acc@1: {np.mean(epoch_accuracies) * 100:.6f} "
-        )
-
-    print("Aggregating Teachers...")
-
-    n_train_student = len(student_loader.dataset)
-    preds = torch.zeros((n_teachers, n_train_student), dtype=torch.long)
-    for i, model in enumerate(tqdm(teachers)):
-        outputs = torch.zeros(0, dtype=torch.long)
-
-        model.eval()
-        for batch in student_loader:
-            output = model(batch[0])
-            probs = torch.argmax(output, dim=1)
-            outputs = torch.cat((outputs, probs))
-
-        preds[i] = outputs
-
-    bins = preds.max() + 1
-    label_counts = torch.zeros((n_train_student, bins), dtype=torch.long)
-    for col in preds:
-        label_counts[np.arange(n_train_student), col] += 1
-
-    beta = 1 / target_epsilon
-    label_counts += np.random.laplace(0, beta, 1)
-    labels = label_counts.argmax(dim=1)
-
-    def gen_student_loader(student_loader, labels):
-        for i, batch in enumerate(iter(student_loader)):
-            yield batch[0], labels[i * len(batch[0]) : (i + 1) * len(batch[0])]
-
-    student_model = model_class()
-    student_model.to(device)
-
-    optimizer = optim_class(student_model.parameters(), **kwargs)
-
-    student_model.train()
-    losses = []
-    accuracies = []
-
-    print("Training Student Model...")
-
-    for epoch in range(epochs):
-        epoch_losses = []
-        epoch_accuracies = []
-
-        generator = gen_student_loader(student_loader, labels)
-        for images, target in tqdm(generator, total=len(student_loader)):
-            optimizer.zero_grad()
-
-            images = images.to(device)
-            target = target.to(device)
-
-            output = student_model(images)
-            loss = criterion(output, target)
-
-            preds = np.argmax(output.detach().cpu().numpy(), axis=1)
-            lbls = target.detach().cpu().numpy()
-
-            acc = (preds == lbls).mean()
-
-            epoch_losses.append(loss.item())
-            epoch_accuracies.append(acc)
-
-            loss.backward()
-            optimizer.step()
-
-        print(
-            f"Train Epoch: {epoch + 1} "
-            f"Loss: {np.mean(epoch_losses):.6f} "
-            f"Acc@1: {np.mean(epoch_accuracies) * 100:.6f} "
-        )
-
-        losses.extend(epoch_losses)
-        accuracies.extend(epoch_accuracies)
-
-    metrics = {"student_loss": losses, "student_accuracy": accuracies}
-    return student_model, metrics
+    return model, logger.get_metrics()
 
 
 def train_dpsgdf(
@@ -634,14 +450,13 @@ def train_dpsgdf(
     )
 
     model.train()
-    losses = []
-    accuracies = []
+    logger = Logger()
 
     print("Training Model...")
 
-    for epoch in range(epochs):
+    for _ in range(epochs):
         epoch_losses = []
-        epoch_accuracies = []
+        epoch_accs = []
 
         with IndexCachingBatchMemoryManager(
             data_loader=train_loader,
@@ -667,26 +482,213 @@ def train_dpsgdf(
                 acc = (preds == labels).mean()
 
                 epoch_losses.append(loss.item())
-                epoch_accuracies.append(acc)
+                epoch_accs.append(acc)
 
                 loss.backward()
                 optimizer.step(group_labels=batch_groups)
 
         epsilon = accountant.get_epsilon(target_delta)
 
+        logger.record(epoch_losses, epoch_accs)
+        if val_loader is not None:
+            logger.record_val(*validate_model(model, val_loader, criterion))
+
+        logger.log(epsilon=epsilon, delta=target_delta)
+
+    logger.set_metric(thresholds=optimizer.thresholds)
+
+    return model, logger.get_metrics()
+
+
+def train_pate(
+    train_loader: torch.utils.data.DataLoader,
+    val_loader: Optional[torch.utils.data.DataLoader],
+    student_loader: torch.utils.data.DataLoader,
+    model_class: Type[torch.nn.Module],
+    optim_class: Type[torch.optim.Optimizer],
+    loss_fn: torch.nn.Module,
+    n_teachers: int,
+    target_epsilon: float,
+    target_delta: float,
+    epochs: int,
+    **kwargs,
+) -> Tuple[torch.nn.Module, Mapping[str, Any]]:
+    """Train a model with PATE in the given environment.
+
+    Args:
+        train_loader (torch.utils.data.DataLoader):
+            The training dataloader used to train the teacher ensemble model.
+        val_loader (Optional[torch.utils.data.DataLoader]):
+            The validation data loader. If None, validation is not performed.
+        student_loader (torch.utils.data.DataLoader):
+            The training dataloader for the public data used to train the student model.
+        model_class (Type[torch.nn.Module]):
+            The class of the model to be used during training.
+        optim_class (Type[torch.optim.Optimizer]):
+            The class of the optimizer to be used during training.
+        loss_fn (torch.nn.Module):
+            The loss function.
+        n_teachers (int):
+            The number of teachers to use in the ensemble.
+        target_epsilon (float):
+            The target epsilon for DP-SGD-W.
+        target_delta (float):
+            The target delta for DP-SGD-W.
+        epochs (int):
+            The number of epochs to train for.
+        **kwargs:
+            Passed to optim_class constructor.
+
+    Returns:
+        Tuple[torch.nn.Module, Mapping[str, Any]]:
+            The trained model and a dictionary consisting of train-time metrics.
+    """
+
+    teacher_loaders = []
+    n_train = len(train_loader.dataset)
+    data_size = n_train // n_teachers
+    for i in range(n_teachers):
+        idxs = list(range(i * data_size, max((i + 1) * data_size, n_train)))
+        subset_data = torch.utils.data.Subset(train_loader.dataset, idxs)
+        loader = torch.utils.data.DataLoader(
+            subset_data, batch_size=train_loader.batch_size, shuffle=True
+        )
+        teacher_loaders.append(loader)
+
+    criterion = loss_fn
+    teachers = []
+    teacher_metrics = []
+
+    print(f"Training {n_teachers} Teacher Models...")
+
+    for i in range(n_teachers):
+        model = model_class()
+        model.to(device)
+        optimizer = optim_class(model.parameters(), **kwargs)
+
+        model.train()
+        losses = []
+        accs = []
+
+        for _ in tqdm(range(epochs)):
+            epoch_losses = []
+            epoch_accs = []
+
+            for batch in teacher_loaders[i]:
+                optimizer.zero_grad()
+
+                images = batch[0].to(device)
+                target = batch[1].to(device)
+
+                output = model(images)
+                loss = criterion(output, target)
+
+                preds = np.argmax(output.detach().cpu().numpy(), axis=1)
+                labels = target.detach().cpu().numpy()
+
+                acc = (preds == labels).mean()
+
+                epoch_losses.append(loss.item())
+                epoch_accs.append(acc)
+
+                loss.backward()
+                optimizer.step()
+
+            losses.append(np.mean(epoch_losses))
+            accs.append(np.mean(epoch_accs))
+
+        if val_loader is not None:
+            val_losses, val_accs = validate_model(model, val_loader, criterion)
+            val_loss = np.mean(val_losses)
+            val_acc = np.mean(val_accs)
+
         print(
-            f"Train Epoch: {epoch + 1} "
-            f"Loss: {np.mean(epoch_losses):.6f} "
-            f"Acc@1: {np.mean(epoch_accuracies) * 100:.6f} "
-            f"(ε = {epsilon:.2f}, δ = {target_delta})"
+            f"Teacher Model: {i + 1}",
+            f"Loss: {losses[-1]:.2f}",
+            f"Acc@1: {accs[-1] * 100:.2f}",
+            f"Val Loss: {val_loss:.2f}" if val_loader is not None else "",
+            f"Val Acc@1: {val_acc * 100:.2f}" if val_loader is not None else "",
         )
 
-        losses.extend(epoch_losses)
-        accuracies.extend(epoch_accuracies)
+        teachers.append(model.cpu())
+        teacher_metrics.append(
+            {
+                "loss": losses[-1],
+                "acc": accs[-1],
+                "val_loss": val_loss if val_loader is not None else None,
+                "val_acc": val_acc if val_loader is not None else None,
+            }
+        )
 
-    metrics = {
-        "loss": losses,
-        "accuracy": accuracies,
-        "thresholds": optimizer.thresholds,
-    }
-    return model, metrics
+    print("Aggregating Teachers...")
+
+    n_train_student = len(student_loader.dataset)
+    preds = torch.zeros((n_teachers, n_train_student), dtype=torch.long)
+    for i, model in enumerate(tqdm(teachers)):
+        outputs = torch.zeros(0, dtype=torch.long)
+
+        model.eval()
+        for batch in student_loader:
+            output = model(batch[0])
+            probs = torch.argmax(output, dim=1)
+            outputs = torch.cat((outputs, probs))
+
+        preds[i] = outputs
+
+    bins = preds.max() + 1
+    label_counts = torch.zeros((n_train_student, bins), dtype=torch.long)
+    for col in preds:
+        label_counts[np.arange(n_train_student), col] += 1
+
+    beta = 1 / target_epsilon
+    label_counts += np.random.laplace(0, beta, 1)
+    labels = label_counts.argmax(dim=1)
+
+    def gen_student_loader(student_loader, labels):
+        for i, batch in enumerate(iter(student_loader)):
+            yield batch[0], labels[i * len(batch[0]) : (i + 1) * len(batch[0])]
+
+    student_model = model_class()
+    student_model.to(device)
+
+    optimizer = optim_class(student_model.parameters(), **kwargs)
+
+    student_model.train()
+    logger = Logger()
+
+    print("Training Student Model...")
+
+    for _ in range(epochs):
+        epoch_losses = []
+        epoch_accs = []
+
+        generator = gen_student_loader(student_loader, labels)
+        for images, target in tqdm(generator, total=len(student_loader)):
+            optimizer.zero_grad()
+
+            images = images.to(device)
+            target = target.to(device)
+
+            output = student_model(images)
+            loss = criterion(output, target)
+
+            preds = np.argmax(output.detach().cpu().numpy(), axis=1)
+            lbls = target.detach().cpu().numpy()
+
+            acc = (preds == lbls).mean()
+
+            epoch_losses.append(loss.item())
+            epoch_accs.append(acc)
+
+            loss.backward()
+            optimizer.step()
+
+        logger.record(epoch_losses, epoch_accs)
+        if val_loader is not None:
+            logger.record_val(*validate_model(model, val_loader, criterion))
+
+        logger.log()
+
+    logger.set_metric(teacher_metrics=teacher_metrics)
+
+    return student_model, logger.get_metrics()

@@ -148,6 +148,59 @@ def _data_loader_with_batch_sampler(
     )
 
 
+class Logger:
+    def __init__(self, **kwargs):
+        self.metrics = {
+            "epochs": 0,
+            "loss": [],
+            "acc": [],
+            "val_loss": [],
+            "val_acc": [],
+        }
+        for key, value in kwargs.items():
+            self.metrics[key] = value
+
+    def record(self, epoch_losses, epoch_accs):
+        self.metrics["loss"].extend(epoch_losses)
+        self.metrics["acc"].extend(epoch_accs)
+        self.metrics["loss_per_epoch"].append(np.mean(epoch_losses))
+        self.metrics["acc_per_epoch"].append(np.mean(epoch_accs))
+        self.metrics["epochs"] += 1
+
+    def record_val(self, epoch_val_losses, epoch_val_accs):
+        self.metrics["val_loss"].extend(epoch_val_losses)
+        self.metrics["val_acc"].extend(epoch_val_accs)
+        self.metrics["val_loss_per_epoch"].append(np.mean(epoch_val_losses))
+        self.metrics["val_acc_per_epoch"].append(np.mean(epoch_val_accs))
+
+    def log(self, epsilon=None, delta=None):
+        print(
+            f"Epoch: {self.metrics['epochs']}",
+            f"Train Loss: {self.metrics['loss_per_epoch'][-1]:.2f}",
+            f"Train Acc@1: {self.metrics['acc_per_epoch'][-1]:.2f}",
+            end=" ",
+        )
+
+        if len(self.val_loss_per_epoch) > 0 and len(self.val_acc_per_epoch) > 0:
+            print(
+                f"Val Loss: {self.metrics['val_loss_per_epoch'][-1]:.2f}",
+                f"Val Acc@1: {self.metrics['val_acc_per_epoch'][-1]:.2f}",
+                end=" ",
+            )
+
+        if epsilon is not None and delta is not None:
+            print(f"(ε = {epsilon:.2f}, δ = {delta})", end=" ")
+
+        print()
+
+    def set_metric(self, **kwargs):
+        for key, value in kwargs.items():
+            self.metrics[key] = value
+
+    def get_metrics(self):
+        return self.metrics
+
+
 class _SamplerWrapper(torch.utils.data.Sampler):
     def __init__(self, sampler: torch.utils.data.Sampler):
         self.sampler = sampler
