@@ -154,8 +154,12 @@ class Logger:
             "epochs": 0,
             "loss": [],
             "acc": [],
+            "loss_per_epoch": [],
+            "acc_per_epoch": [],
             "val_loss": [],
             "val_acc": [],
+            "val_loss_per_epoch": [],
+            "val_acc_per_epoch": [],
         }
         for key, value in kwargs.items():
             self.metrics[key] = value
