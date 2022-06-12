@@ -65,10 +65,10 @@ def train_vanilla(
     criterion = loss_fn
     optimizer = optim_class(model.parameters(), **kwargs)
 
-    model.train()
     logger = Logger()
 
     for _ in range(epochs):
+        model.train()
         epoch_losses = []
         epoch_accs = []
 
@@ -165,10 +165,10 @@ def train_dpsgd(
         max_grad_norm=max_grad_norm,
     )
 
-    model.train()
     logger = Logger()
 
     for _ in range(epochs):
+        model.train()
         epoch_losses = []
         epoch_accs = []
 
@@ -321,12 +321,12 @@ def train_dpsgd_weighted(
         epochs=epochs,
     )
 
-    model.train()
     logger = Logger()
 
     print("Training Model...")
 
     for _ in range(epochs):
+        model.train()
         epoch_losses = []
         epoch_accs = []
 
@@ -449,12 +449,12 @@ def train_dpsgdf(
         log_thresholds=log_thresholds,
     )
 
-    model.train()
     logger = Logger()
 
     print("Training Model...")
 
     for _ in range(epochs):
+        model.train()
         epoch_losses = []
         epoch_accs = []
 
@@ -654,12 +654,12 @@ def train_pate(
 
     optimizer = optim_class(student_model.parameters(), **kwargs)
 
-    student_model.train()
     logger = Logger()
 
     print("Training Student Model...")
 
     for _ in range(epochs):
+        student_model.train()
         epoch_losses = []
         epoch_accs = []
 

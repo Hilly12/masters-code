@@ -29,6 +29,8 @@ def validate_model(
             in the epoch.
     """
 
+    model.eval()
+
     losses = []
     accuracies = []
 
