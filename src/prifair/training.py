@@ -485,7 +485,8 @@ def train_dpsgdf(
                 epoch_accs.append(acc)
 
                 loss.backward()
-                optimizer.step(group_labels=batch_groups)
+                optimizer.set_batch_params(group_labels=batch_groups)
+                optimizer.step()
 
         epsilon = accountant.get_epsilon(target_delta)
 

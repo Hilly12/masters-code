@@ -1,6 +1,6 @@
 """Wrappers for optimizers that specific algorithms use during training. """
 
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 import torch
 from opacus.optimizers import DPOptimizer
@@ -184,20 +184,5 @@ class DPSGDFOptimizer(DPOptimizer):
 
         return C
 
-    def step(
-        self,
-        *,
-        group_labels: torch.Tensor,
-        closure: Optional[Callable[[], float]] = None
-    ) -> Optional[float]:
-
+    def set_batch_params(self, *, group_labels: torch.Tensor):
         self.sample_group_labels = group_labels
-
-        if closure is not None:
-            with torch.enable_grad():
-                closure()
-
-        if self.pre_step():
-            return self.original_optimizer.step()
-        else:
-            return None

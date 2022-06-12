@@ -185,7 +185,10 @@ class Logger:
             end=" ",
         )
 
-        if len(self.val_loss_per_epoch) > 0 and len(self.val_acc_per_epoch) > 0:
+        if (
+            len(self.metrics["val_loss_per_epoch"]) > 0
+            and len(self.metrics["val_acc_per_epoch"]) > 0
+        ):
             print(
                 f"Val Loss: {self.metrics['val_loss_per_epoch'][-1]:.2f}",
                 f"Val Acc@1: {self.metrics['val_acc_per_epoch'][-1]:.2f}",
