@@ -9,14 +9,17 @@ from opacus.utils.batch_memory_manager import BatchMemoryManager
 from opacus.validators import ModuleValidator
 from tqdm import tqdm
 
-from .data import IndexCachingBatchMemoryManager, WeightedDataLoader
-from .utils import Logger, validate_model
+from .data import IndexCachingBatchMemoryManager
+from .utils import Logger, predict, validate_model
 
 from .core import (  # isort:skip
     latent_reweigh,
     reweigh,
     setup_adaptive_clipped_dpsgd,
     setup_weighted_dpsgd,
+    create_teacher_loaders,
+    create_weighted_teacher_loaders,
+    laplacian_aggregator,
 )
 
 
@@ -545,16 +548,11 @@ def train_pate(
             The trained model and a dictionary consisting of train-time metrics.
     """
 
-    teacher_loaders = []
-    n_train = len(train_loader.dataset)
-    data_size = n_train // n_teachers
-    for i in range(n_teachers):
-        idxs = list(range(i * data_size, max((i + 1) * data_size, n_train)))
-        subset_data = torch.utils.data.Subset(train_loader.dataset, idxs)
-        loader = torch.utils.data.DataLoader(
-            subset_data, batch_size=train_loader.batch_size, shuffle=True
-        )
-        teacher_loaders.append(loader)
+    teacher_loaders = create_teacher_loaders(
+        dataset=train_loader.dataset,
+        n_teachers=n_teachers,
+        batch_size=train_loader.batch_size,
+    )
 
     criterion = loss_fn
     teachers = []
@@ -624,26 +622,11 @@ def train_pate(
     print("Aggregating Teachers...")
 
     n_train_student = len(student_loader.dataset)
-    preds = torch.zeros((n_teachers, n_train_student), dtype=torch.long)
+    teacher_preds = torch.zeros((n_teachers, n_train_student), dtype=torch.long)
     for i, model in enumerate(tqdm(teachers)):
-        outputs = torch.zeros(0, dtype=torch.long)
+        teacher_preds[i] = predict(model, student_loader)
 
-        model.eval()
-        for batch in student_loader:
-            output = model(batch[0])
-            probs = torch.argmax(output, dim=1)
-            outputs = torch.cat((outputs, probs))
-
-        preds[i] = outputs
-
-    bins = preds.max() + 1
-    label_counts = torch.zeros((n_train_student, bins), dtype=torch.long)
-    for col in preds:
-        label_counts[np.arange(n_train_student), col] += 1
-
-    beta = 1 / target_epsilon
-    label_counts += np.random.laplace(0, beta, 1)
-    labels = label_counts.argmax(dim=1)
+    labels = laplacian_aggregator(teacher_preds, target_epsilon)
 
     def gen_student_loader(student_loader, labels):
         for i, batch in enumerate(iter(student_loader)):
@@ -742,19 +725,12 @@ def train_reweighed_sftpate(
             The trained model and a dictionary consisting of train-time metrics.
     """
 
-    teacher_loaders = []
-    n_train = len(train_loader.dataset)
-    data_size = n_train // n_teachers
-    for i in range(n_teachers):
-        idxs = list(range(i * data_size, max((i + 1) * data_size, n_train)))
-        subset_data = torch.utils.data.Subset(train_loader.dataset, idxs)
-        loader = WeightedDataLoader(
-            torch.utils.data.DataLoader(
-                subset_data, batch_size=train_loader.batch_size, shuffle=True
-            )
-        )
-        loader.update_weights(weights[idxs])
-        teacher_loaders.append(loader)
+    teacher_loaders = create_weighted_teacher_loaders(
+        dataset=train_loader.dataset,
+        n_teachers=n_teachers,
+        batch_size=train_loader.batch_size,
+        weights=weights,
+    )
 
     criterion = loss_fn
     teachers = []
@@ -824,26 +800,11 @@ def train_reweighed_sftpate(
     print("Aggregating Teachers...")
 
     n_train_student = len(student_loader.dataset)
-    preds = torch.zeros((n_teachers, n_train_student), dtype=torch.long)
+    teacher_preds = torch.zeros((n_teachers, n_train_student), dtype=torch.long)
     for i, model in enumerate(tqdm(teachers)):
-        outputs = torch.zeros(0, dtype=torch.long)
+        teacher_preds[i] = predict(model, student_loader)
 
-        model.eval()
-        for batch in student_loader:
-            output = model(batch[0])
-            probs = torch.argmax(output, dim=1)
-            outputs = torch.cat((outputs, probs))
-
-        preds[i] = outputs
-
-    bins = preds.max() + 1
-    label_counts = torch.zeros((n_train_student, bins), dtype=torch.long)
-    for col in preds:
-        label_counts[np.arange(n_train_student), col] += 1
-
-    beta = 1 / target_epsilon
-    label_counts += np.random.laplace(0, beta, 1)
-    labels = label_counts.argmax(dim=1)
+    labels = laplacian_aggregator(teacher_preds, target_epsilon)
 
     def gen_student_loader(student_loader, labels):
         for i, batch in enumerate(iter(student_loader)):

@@ -11,7 +11,7 @@ from opacus.optimizers import DPOptimizer
 from opacus.privacy_engine import forbid_accumulation_hook
 from opacus.utils.uniform_sampler import UniformWithReplacementSampler
 
-from .data import NonUniformPoissonSampler
+from .data import NonUniformPoissonSampler, WeightedDataLoader
 from .optimizers import DPSGDFOptimizer
 from .utils import _data_loader_with_batch_sampler
 
@@ -239,3 +239,60 @@ def setup_adaptive_clipped_dpsgd(
     )
 
     return dp_loader, model, optimizer, accountant
+
+
+def create_teacher_loaders(
+    dataset: torch.utils.data.Dataset, n_teachers: int, batch_size: int
+) -> Sequence[torch.utils.data.DataLoader]:
+    teacher_loaders = []
+    n_train = len(dataset)
+    shuffled_idxs = np.random.permutation(n_train)
+    size = n_train // n_teachers
+
+    for i in range(n_teachers):
+        idxs = shuffled_idxs[i * size : min((i + 1) * size, n_train)]
+        subset_data = torch.utils.data.Subset(dataset, idxs)
+        loader = torch.utils.data.DataLoader(
+            subset_data, batch_size=batch_size, shuffle=True
+        )
+        teacher_loaders.append(loader)
+
+    return teacher_loaders
+
+
+def create_weighted_teacher_loaders(
+    dataset: torch.utils.data.Dataset,
+    n_teachers: int,
+    batch_size: int,
+    weights: Union[Sequence[float], np.ndarray, torch.Tensor],
+) -> Sequence[WeightedDataLoader]:
+    teacher_loaders = []
+    n_train = len(dataset)
+    shuffled_idxs = np.random.permutation(n_train)
+    size = n_train // n_teachers
+
+    for i in range(n_teachers):
+        idxs = shuffled_idxs[i * size : min((i + 1) * size, n_train)]
+        subset_data = torch.utils.data.Subset(dataset, idxs)
+        loader = torch.utils.data.DataLoader(subset_data, batch_size=batch_size)
+        weighted_loader = WeightedDataLoader(loader)
+        weighted_loader.update_weights(weights[idxs])
+        teacher_loaders.append(weighted_loader)
+
+    return teacher_loaders
+
+
+def laplacian_aggregator(
+    teacher_preds: np.ndarray, target_epsilon: float
+) -> np.ndarray:
+    n_train_student = teacher_preds.shape[1]
+    bins = teacher_preds.max() + 1
+    label_counts = torch.zeros((n_train_student, bins), dtype=torch.long)
+    for col in teacher_preds:
+        label_counts[torch.arange(n_train_student), col] += 1
+
+    beta = 1 / target_epsilon
+    label_counts += np.random.laplace(0, beta, 1)
+    labels = label_counts.argmax(dim=1)
+
+    return labels

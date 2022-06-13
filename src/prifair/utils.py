@@ -106,6 +106,18 @@ def evaluate_model(
     return np.concatenate(pred_list)
 
 
+def predict(model: torch.nn.Module, data_loader: torch.utils.data.DataLoader):
+    model.eval()
+
+    outputs = torch.zeros(0, dtype=torch.long)
+    for batch in data_loader:
+        output = model(batch[0])
+        probs = torch.argmax(output, dim=1)
+        outputs = torch.cat((outputs, probs))
+
+    return outputs
+
+
 def _shape_safe(x):
     return x.shape if hasattr(x, "shape") else ()
 
