@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from opacus.optimizers import DPOptimizer
-from opacus.optimizers.optimizer import (  # _generate_noise,
+from opacus.optimizers.optimizer import (
     _check_processed_flag,
     _get_flat_grad_sample,
     _mark_as_processed,
