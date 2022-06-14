@@ -128,9 +128,7 @@ class AdaptiveClippingOptimizer(DPOptimizer):
             _mark_as_processed(p.grad_sample)
 
     @abstractmethod
-    def compute_clipping_bounds(
-        self, per_sample_norms: torch.Tensor, **kwargs
-    ) -> torch.Tensor:
+    def compute_clipping_bounds(self, per_sample_norms: torch.Tensor) -> torch.Tensor:
         """Computes the variable clipping bounds for each sample in the batch.
 
         Args:
@@ -180,17 +178,15 @@ class DPSGDFOptimizer(AdaptiveClippingOptimizer):
         arXiv preprint arXiv:200303699. 2020.
     """
 
-    def compute_clipping_bounds(
-        self, per_sample_norms: torch.Tensor, **kwargs
-    ) -> torch.Tensor:
-        if "group_labels" not in kwargs:
+    def compute_clipping_bounds(self, per_sample_norms: torch.Tensor) -> torch.Tensor:
+        if "group_labels" not in self.batch_params:
             raise ValueError(
                 "``group_labels`` has not been set. Pass the batch group labels \
                 to ``DPSGDFOptimizer.set_batch_params()`` before calling \
                 ``DPSGDFOptimizer.step()``."
             )
 
-        batch_group_labels = kwargs["group_labels"]
+        batch_group_labels = self.batch_params["group_labels"]
         assert len(batch_group_labels) == len(per_sample_norms)
 
         n_samples = len(batch_group_labels)

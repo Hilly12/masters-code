@@ -499,7 +499,7 @@ def train_dpsgdf(
 
         logger.log(epsilon=epsilon, delta=target_delta)
 
-    logger.set_metric(thresholds=optimizer.thresholds)
+    logger.set_metric(thresholds=optimizer.logged_thresholds)
 
     return model, logger.get_metrics()
 
