@@ -291,6 +291,7 @@ def laplacian_aggregator(
     for col in teacher_preds:
         label_counts[torch.arange(n_train_student), col] += 1
 
+    # steps = int(epochs * len())
     beta = 1 / target_epsilon
     label_counts += np.random.laplace(0, beta, 1)
     labels = label_counts.argmax(dim=1)

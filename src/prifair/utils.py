@@ -1,9 +1,12 @@
 """Utilities"""
 
+import math
 from typing import List, Tuple, Union
 
 import numpy as np
 import torch
+
+from ._pate_analysis import logmgf_from_counts, smoothed_sens
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -116,6 +119,41 @@ def predict(model: torch.nn.Module, data_loader: torch.utils.data.DataLoader):
         outputs = torch.cat((outputs, probs))
 
     return outputs
+
+
+def _pate_data_dependent_analysis(
+    label_counts, labels, noise_eps, delta=1e-5, moments=8, beta=0.09
+):
+    l_list = 1.0 + np.array(range(moments))
+
+    total_log_mgf_nm = np.array([0.0 for _ in l_list])
+    total_ss_nm = np.array([0.0 for _ in l_list])
+
+    for label in labels:
+        total_log_mgf_nm += np.array(
+            [
+                logmgf_from_counts(label_counts[:, label], noise_eps, l)
+                for l in l_list  # noqa: E741
+            ]
+        )
+
+        total_ss_nm += np.array(
+            [
+                smoothed_sens(label_counts[:, label], noise_eps, l, beta)
+                for l in l_list  # noqa: E741
+            ]
+        )
+
+    eps_list_nm = (total_log_mgf_nm - math.log(delta)) / l_list
+    data_dep_eps = min(eps_list_nm)
+
+    if data_dep_eps == eps_list_nm[-1]:
+        print(
+            "Warning: May not have used enough values of l."
+            "Increase 'moments' variable and run again."
+        )
+
+    return data_dep_eps
 
 
 def _shape_safe(x):
