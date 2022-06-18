@@ -180,7 +180,7 @@ def setup_adaptive_clipped_dpsgd(
     target_delta: float,
     epochs: int,
     clipping: str = "dpsgdf",
-    **kwargs
+    **kwargs,
 ):
     """Sets up the DP-SGD-W optimizer.
 
@@ -229,7 +229,7 @@ def setup_adaptive_clipped_dpsgd(
                 accountant=accountant.mechanism(),
             ),
             expected_batch_size=expected_batch_size,
-            **kwargs
+            **kwargs,
         )
     else:
         raise ValueError("``clipping`` must be one of ['dpsgdf', 'fairdp']")
@@ -283,7 +283,7 @@ def create_weighted_teacher_loaders(
 
 
 def laplacian_aggregator(
-    teacher_preds: np.ndarray, target_epsilon: float
+    teacher_preds: np.ndarray, target_epsilon: float, target_delta: float = 1e-5
 ) -> np.ndarray:
     n_train_student = teacher_preds.shape[1]
     bins = teacher_preds.max() + 1
@@ -291,9 +291,34 @@ def laplacian_aggregator(
     for col in teacher_preds:
         label_counts[torch.arange(n_train_student), col] += 1
 
-    # steps = int(epochs * len())
     beta = 1 / target_epsilon
-    label_counts += np.random.laplace(0, beta, 1)
+    label_counts += np.random.laplace(0, beta, bins)
     labels = label_counts.argmax(dim=1)
+
+    # data_dep_eps, _ =
+    # perform_analysis(teacher_preds, labels, noise_eps=target_epsilon, delta=target_delta)
+    # print(f"Data Dependent Epsilon: {data_dep_eps}")
+
+    return labels
+
+
+def gnmax_aggregator(
+    teacher_preds: np.ndarray, target_epsilon: float, target_delta: float = 1e-5
+) -> np.ndarray:
+    n_train_student = teacher_preds.shape[1]
+    bins = teacher_preds.max() + 1
+    label_counts = torch.zeros((n_train_student, bins), dtype=torch.long)
+    for col in teacher_preds:
+        label_counts[torch.arange(n_train_student), col] += 1
+
+    sigma = 1 / target_epsilon
+    label_counts += np.random.normal(0, sigma, bins)
+    labels = label_counts.argmax(dim=1)
+
+    # data_dep_eps, _ = perform_analysis(
+    #     teacher_preds, labels, noise_eps=target_epsilon, delta=target_delta
+    # )
+
+    # print(f"Data Dependent Epsilon: {data_dep_eps}")
 
     return labels
