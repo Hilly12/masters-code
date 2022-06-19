@@ -1,6 +1,6 @@
 """Core API"""
 
-from typing import Sequence, Union
+from typing import Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -13,6 +13,7 @@ from opacus.utils.uniform_sampler import UniformWithReplacementSampler
 
 from .data import NonUniformPoissonSampler, WeightedDataLoader
 from .optimizers import DPSGDFOptimizer
+from .pate.core import gnmax_data_dep_epsilon
 from .utils import _data_loader_with_batch_sampler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -303,22 +304,65 @@ def laplacian_aggregator(
 
 
 def gnmax_aggregator(
-    teacher_preds: np.ndarray, target_epsilon: float, target_delta: float = 1e-5
-) -> np.ndarray:
-    n_train_student = teacher_preds.shape[1]
+    teacher_preds: np.ndarray,
+    target_epsilon: float,
+    target_delta: float,
+    epsilon_error: float = 0.5,
+    max_iters: int = 10,
+    max_samples_per_iter: int = 2000,
+) -> Tuple[np.ndarray, float]:
+    n_teachers, n_student_train = teacher_preds.shape
     bins = teacher_preds.max() + 1
-    label_counts = torch.zeros((n_train_student, bins), dtype=torch.long)
+    label_counts = torch.zeros((n_student_train, bins), dtype=torch.long)
     for col in teacher_preds:
-        label_counts[torch.arange(n_train_student), col] += 1
+        label_counts[torch.arange(n_student_train), col] += 1
 
-    sigma = 1 / target_epsilon
+    print("Choosing a suitable sigma for GNMax", end="")
+
+    iters = 0
+    eps = float("inf")
+    sig_low, sig_high = 1 / target_epsilon, float(n_teachers)
+    sigma = sig_high
+    max_sig_high = sig_high
+    while abs(eps - target_epsilon) > epsilon_error and iters < max_iters:
+        if iters >= max_iters:
+            print(
+                f"Warning: Couldn't find a sigma within the error bound in {max_iters} iterations."
+                f"Consider increasing the allowed epsilon error or the max number of iterations."
+                f"Using sigma={sigma}."
+            )
+            break
+
+        sigma = (sig_low + sig_high) / 2
+        noise = np.random.normal(0, sigma, bins)
+
+        label_counts += noise
+        eps = gnmax_data_dep_epsilon(
+            label_counts, sigma, target_delta, max_samples=max_samples_per_iter
+        )
+        label_counts -= noise
+
+        if eps > target_epsilon:
+            sig_low = sigma
+        else:
+            sig_high = sigma
+
+        if sig_high == max_sig_high and sig_high - sig_low < 1e-2:
+            print(
+                f"Warning: sigma={sigma} >= n_teachers={n_teachers}. Epsilon may be too small"
+                f"Consider increasing epsilon for improved utility."
+            )
+            max_sig_high *= 2
+            sig_high = max_sig_high
+
+        iters += 1
+        print(".", end="")
+
     label_counts += np.random.normal(0, sigma, bins)
     labels = label_counts.argmax(dim=1)
 
-    # data_dep_eps, _ = perform_analysis(
-    #     teacher_preds, labels, noise_eps=target_epsilon, delta=target_delta
-    # )
+    data_dep_eps = gnmax_data_dep_epsilon(
+        label_counts, sigma, target_delta, max_samples=None
+    )
 
-    # print(f"Data Dependent Epsilon: {data_dep_eps}")
-
-    return labels
+    return labels, data_dep_eps

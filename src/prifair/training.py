@@ -19,7 +19,7 @@ from .core import (  # isort:skip
     setup_weighted_dpsgd,
     create_teacher_loaders,
     create_weighted_teacher_loaders,
-    laplacian_aggregator,
+    gnmax_aggregator,
 )
 
 
@@ -626,7 +626,8 @@ def train_pate(
     for i, model in enumerate(tqdm(teachers)):
         teacher_preds[i] = predict(model, student_loader)
 
-    labels = laplacian_aggregator(teacher_preds, target_epsilon)
+    labels, data_dep_eps = gnmax_aggregator(teacher_preds, target_epsilon, target_delta)
+    print(f"Data Dependent Epsilon: {data_dep_eps}")
 
     def gen_student_loader(student_loader, labels):
         for i, batch in enumerate(iter(student_loader)):
@@ -674,6 +675,7 @@ def train_pate(
         logger.log()
 
     logger.set_metric(teacher_metrics=teacher_metrics)
+    logger.set_metric(data_dep_eps=data_dep_eps)
 
     return student_model, logger.get_metrics()
 
@@ -804,7 +806,8 @@ def train_reweighed_sftpate(
     for i, model in enumerate(tqdm(teachers)):
         teacher_preds[i] = predict(model, student_loader)
 
-    labels = laplacian_aggregator(teacher_preds, target_epsilon)
+    labels, data_dep_eps = gnmax_aggregator(teacher_preds, target_epsilon, target_delta)
+    print(f"Data Dependent Epsilon: {data_dep_eps}")
 
     def gen_student_loader(student_loader, labels):
         for i, batch in enumerate(iter(student_loader)):
@@ -852,5 +855,6 @@ def train_reweighed_sftpate(
         logger.log()
 
     logger.set_metric(teacher_metrics=teacher_metrics)
+    logger.set_metric(data_dep_eps=data_dep_eps)
 
     return student_model, logger.get_metrics()
