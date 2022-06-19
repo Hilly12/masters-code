@@ -25,6 +25,10 @@ import math
 import numpy as np
 import scipy.stats
 
+PATE_DEFAULT_ALPHAS = np.array(
+    [1 + x / 10.0 for x in range(1, 100)] + list(range(12, 64))
+)
+
 
 def _logaddexp(x):
     """Addition in the log space. Analogue of numpy.logaddexp for a list."""
@@ -334,3 +338,24 @@ def rdp_pure_eps(logq, pure_eps, orders):
         return np.asscalar(ret)
     else:
         return ret
+
+
+######################
+# Additional Methods #
+######################
+
+
+def gnmax_data_dep_epsilon(label_counts, sigma, target_delta, max_samples=None):
+    counts = label_counts.numpy()
+    if max_samples is not None:
+        perm = np.random.permutation(len(label_counts))
+        counts = label_counts[perm][:max_samples].numpy()
+
+    worst_case_eps = 0
+    for col in counts:
+        logq = compute_logq_gaussian(col, sigma)
+        rdp = rdp_gaussian(logq, sigma, orders=PATE_DEFAULT_ALPHAS)
+        eps, _ = compute_eps_from_delta(PATE_DEFAULT_ALPHAS, rdp, target_delta)
+        worst_case_eps = max(worst_case_eps, eps)
+
+    return eps
