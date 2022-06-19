@@ -515,6 +515,7 @@ def train_pate(
     target_epsilon: float,
     target_delta: float,
     epochs: int,
+    epsilon_error_tolerance: float = 0.25,
     **kwargs,
 ) -> Tuple[torch.nn.Module, Mapping[str, Any]]:
     """Train a model with PATE in the given environment.
@@ -540,6 +541,9 @@ def train_pate(
             The target delta for DP-SGD-W.
         epochs (int):
             The number of epochs to train for.
+        epsilon_error_tolerance (float):
+            The epsilon error tolerance while searching for a suitable sigma.
+            Defaults to 0.25.
         **kwargs:
             Passed to optim_class constructor.
 
@@ -626,7 +630,12 @@ def train_pate(
     for i, model in enumerate(tqdm(teachers)):
         teacher_preds[i] = predict(model, student_loader)
 
-    labels, data_dep_eps = gnmax_aggregator(teacher_preds, target_epsilon, target_delta)
+    labels, data_dep_eps = gnmax_aggregator(
+        teacher_preds,
+        target_epsilon,
+        target_delta,
+        epsilon_error=epsilon_error_tolerance,
+    )
     print(f"Data Dependent Epsilon: {data_dep_eps}")
 
     def gen_student_loader(student_loader, labels):
@@ -680,7 +689,7 @@ def train_pate(
     return student_model, logger.get_metrics()
 
 
-def train_reweighed_sftpate(
+def train_reweighed_pate(
     train_loader: torch.utils.data.DataLoader,
     val_loader: Optional[torch.utils.data.DataLoader],
     student_loader: torch.utils.data.DataLoader,
@@ -692,9 +701,10 @@ def train_reweighed_sftpate(
     target_delta: float,
     epochs: int,
     weights: np.ndarray,
+    epsilon_error_tolerance: float = 0.25,
     **kwargs,
 ) -> Tuple[torch.nn.Module, Mapping[str, Any]]:
-    """Train a model with SF_T-PATE in the given environment.
+    """Train a model with Reweighed PATE in the given environment.
 
     Args:
         train_loader (torch.utils.data.DataLoader):
@@ -719,6 +729,9 @@ def train_reweighed_sftpate(
             The number of epochs to train for.
         weights (np.ndarray):
             The weights to use for reweighing the teacher ensemble.
+        epsilon_error_tolerance (float):
+            The epsilon error tolerance while searching for a suitable sigma.
+            Defaults to 0.25.
         **kwargs:
             Passed to optim_class constructor.
 
@@ -806,7 +819,12 @@ def train_reweighed_sftpate(
     for i, model in enumerate(tqdm(teachers)):
         teacher_preds[i] = predict(model, student_loader)
 
-    labels, data_dep_eps = gnmax_aggregator(teacher_preds, target_epsilon, target_delta)
+    labels, data_dep_eps = gnmax_aggregator(
+        teacher_preds,
+        target_epsilon,
+        target_delta,
+        epsilon_error=epsilon_error_tolerance,
+    )
     print(f"Data Dependent Epsilon: {data_dep_eps}")
 
     def gen_student_loader(student_loader, labels):

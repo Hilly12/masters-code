@@ -358,6 +358,8 @@ def gnmax_aggregator(
         iters += 1
         print(".", end="")
 
+    print()
+
     label_counts += np.random.normal(0, sigma, bins)
     labels = label_counts.argmax(dim=1)
 

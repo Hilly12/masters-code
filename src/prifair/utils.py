@@ -111,7 +111,7 @@ def predict(model: torch.nn.Module, data_loader: torch.utils.data.DataLoader):
 
     outputs = torch.zeros(0, dtype=torch.long)
     for batch in data_loader:
-        output = model(batch[0])
+        output = model.to(device)(batch[0].to(device)).detach().cpu()
         probs = torch.argmax(output, dim=1)
         outputs = torch.cat((outputs, probs))
 
