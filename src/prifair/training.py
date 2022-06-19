@@ -630,7 +630,7 @@ def train_pate(
     for i, model in enumerate(tqdm(teachers)):
         teacher_preds[i] = predict(model, student_loader)
 
-    labels, data_dep_eps = gnmax_aggregator(
+    labels, noise_mult, data_dep_eps = gnmax_aggregator(
         teacher_preds,
         target_epsilon,
         target_delta,
@@ -684,6 +684,7 @@ def train_pate(
         logger.log()
 
     logger.set_metric(teacher_metrics=teacher_metrics)
+    logger.set_metric(noise_multiplier=noise_mult)
     logger.set_metric(data_dep_eps=data_dep_eps)
 
     return student_model, logger.get_metrics()
@@ -819,7 +820,7 @@ def train_reweighed_pate(
     for i, model in enumerate(tqdm(teachers)):
         teacher_preds[i] = predict(model, student_loader)
 
-    labels, data_dep_eps = gnmax_aggregator(
+    labels, noise_mult, data_dep_eps = gnmax_aggregator(
         teacher_preds,
         target_epsilon,
         target_delta,
@@ -873,6 +874,7 @@ def train_reweighed_pate(
         logger.log()
 
     logger.set_metric(teacher_metrics=teacher_metrics)
+    logger.set_metric(noise_multiplier=noise_mult)
     logger.set_metric(data_dep_eps=data_dep_eps)
 
     return student_model, logger.get_metrics()
