@@ -321,7 +321,7 @@ def gnmax_aggregator(
 
     iters = 0
     eps = float("inf")
-    sig_low, sig_high = 1 / target_epsilon, float(n_teachers)
+    sig_low, sig_high = 0.0, float(n_teachers)
     sigma = sig_high
     max_sig_high = sig_high
     while abs(eps - target_epsilon) > epsilon_error and iters < max_iters:
