@@ -142,8 +142,8 @@ def test_pate():
     assert model is not None and metrics is not None
 
 
-def test_reweighed_sft_pate():
-    model, metrics = pf.training.train_reweighed_sftpate(
+def test_reweighed_pate():
+    model, metrics = pf.training.train_reweighed_pate(
         train_loader=train_loader,
         val_loader=val_loader,
         student_loader=student_loader,
