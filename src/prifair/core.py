@@ -308,7 +308,7 @@ def gnmax_aggregator(
     target_epsilon: float,
     target_delta: float,
     epsilon_error: float = 0.5,
-    max_iters: int = 10,
+    max_iters: int = 30,
     max_samples_per_iter: int = 2000,
 ) -> Tuple[np.ndarray, float, float]:
     n_teachers, n_student_train = teacher_preds.shape
