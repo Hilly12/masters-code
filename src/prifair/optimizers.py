@@ -207,7 +207,8 @@ class DPSGDFOptimizer(AdaptiveClippingOptimizer):
 
             m_sum += m
 
-        C /= m_sum
+        if m_sum > 0:
+            C /= m_sum
 
         self._log_clipping_thresholds(C, batch_group_labels)
 

@@ -224,6 +224,7 @@ def train_dpsgd_weighted(
     epochs: int,
     max_physical_batch_size: int = 128,
     weighting: str = "latent",
+    relative_weight_bound: float = 20,
     vae: Optional[torch.nn.Module] = None,
     weights: Optional[np.ndarray] = None,
     labels: Optional[np.ndarray] = None,
@@ -259,6 +260,12 @@ def train_dpsgd_weighted(
             then the weights are computed in order to rebalance the distribution of
             the labels, which must be provided in the `labels` argument.
             Defaults to "latent".
+        relative_weight_bound (float):
+            The bound on the relative weight of the sensitive group. This is a maximum
+            bound on the relative sampling rate after reweighing.
+            i.e. If the relative weight bound is 10, then the largest sampling rate
+            will be 10 times the normal sampling rate.
+            Defaults to 20.
         epochs (int):
             The number of epochs to train for.
         max_physical_batch_size (int, optional):
@@ -297,7 +304,7 @@ def train_dpsgd_weighted(
         if labels is None:
             raise ValueError("labels cannot be None if weighting is 'sensitive_attr'")
 
-        weights = reweigh(labels)
+        weights = reweigh(labels, max_relative_weight=relative_weight_bound)
 
     elif weighting != "custom":
         raise ValueError(

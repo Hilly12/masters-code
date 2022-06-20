@@ -1,6 +1,6 @@
 """Core API"""
 
-from typing import Sequence, Tuple, Union
+from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -19,12 +19,18 @@ from .utils import _data_loader_with_batch_sampler
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def reweigh(labels: Sequence[int]) -> np.ndarray:
+def reweigh(
+    labels: Sequence[int], max_relative_weight: Optional[float] = None
+) -> np.ndarray:
     """Returns the inverse weighting for each sample in the dataset.
 
     Args:
         labels (Sequence[int]):
             The relevant sensitive group labels of the dataset.
+        max_relative_weight (Sequence[int]):
+            Clip the weights if their relative magnitude is greater than this bound.
+            This can be useful for weighted DP-SGD to bound the largest sampling rate.
+            If set to None, no clipping is performed. Defaults to None.
 
     Returns:
         np.ndarray:
@@ -47,6 +53,14 @@ def reweigh(labels: Sequence[int]) -> np.ndarray:
     weights = np.zeros(num_samples)
     for mask, counts in sensitive_groups:
         weights[mask] = target_prob / counts
+
+    if max_relative_weight is not None:
+        if weights.max() * num_samples < max_relative_weight:
+            return weights
+
+        while weights.max() * num_samples > max_relative_weight:
+            weights = weights.clip(0, max_relative_weight / num_samples)
+            weights /= weights.sum()
 
     return weights
 
