@@ -22,6 +22,8 @@ project = "PriFair"
 copyright = "2022, Aahil Mehta"
 author = "Aahil Mehta"
 
+master_doc = "index"
+
 
 # -- General configuration ---------------------------------------------------
 
