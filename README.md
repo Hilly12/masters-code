@@ -1,5 +1,9 @@
 # PriFair
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Hilly12/prifair/blob/main/PrivacyFairnessMNIST.ipynb)
+[![Documentation Status](https://readthedocs.org/projects/fairlens/badge/?version=latest)](https://prifair.readthedocs.io/en/latest/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 A light-weight library for training and evaluating fair and privacy-preserving machine learning
 models. Built on top of PyTorch and Opacus.
 
